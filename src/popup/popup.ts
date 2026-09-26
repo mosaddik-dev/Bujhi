@@ -1,4 +1,5 @@
-import type { Request, SimpleResult, TranslateResult } from '../shared/messages.ts';
+import type { Request, SimpleResult } from '../shared/messages.ts';
+import { translateViaPort } from '../shared/translateClient.ts';
 import { loadSettings } from '../shared/storage.ts';
 import { Card, type CardBridge } from '../ui/card.ts';
 import { applyTheme, themeStyleUpdater } from '../ui/theme.ts';
@@ -8,7 +9,7 @@ import { applyTheme, themeStyleUpdater } from '../ui/theme.ts';
 const send = <T>(message: Request) => chrome.runtime.sendMessage(message) as Promise<T>;
 
 const bridge: CardBridge = {
-  translate: (req) => send<TranslateResult>({ type: 'translate', ...req }),
+  translate: translateViaPort,
   speak: (id, text, lang) => send<SimpleResult>({ type: 'speak', id, text, lang }),
   stopSpeech: () => void send({ type: 'stopSpeech' }).catch(() => {}),
   openSettings: () => void chrome.runtime.openOptionsPage(),

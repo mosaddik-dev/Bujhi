@@ -1,11 +1,12 @@
 import type { ProviderErrorKind } from '../shared/errors.ts';
-import type { Lang } from '../shared/lang.ts';
+import type { Lang, ReplyTone } from '../shared/lang.ts';
 import type { ProviderId, ProviderKind } from './catalog.ts';
 
 export interface TranslateJob {
   text: string;
   from: Lang;
   to: Lang;
+  tone?: ReplyTone;
 }
 
 /** A provider with user settings merged over catalog defaults — everything an adapter needs. */
@@ -19,8 +20,16 @@ export interface ResolvedProvider {
   headers: Record<string, string>;
 }
 
-/** An adapter turns a job into raw model text, or throws ProviderError. */
-export type Adapter = (provider: ResolvedProvider, job: TranslateJob, signal: AbortSignal) => Promise<string>;
+/**
+ * An adapter turns a job into raw model text, or throws ProviderError.
+ * With `onDelta` it streams: each new chunk is passed as it arrives, and the full text is still returned.
+ */
+export type Adapter = (
+  provider: ResolvedProvider,
+  job: TranslateJob,
+  signal: AbortSignal,
+  onDelta?: (chunk: string) => void,
+) => Promise<string>;
 
 export class ProviderError extends Error {
   readonly kind: ProviderErrorKind;

@@ -632,6 +632,13 @@ function bindGeneral(): void {
     void flushSave();
   });
 
+  const streaming = $<HTMLInputElement>('#streaming');
+  streaming.checked = settings.streaming;
+  streaming.addEventListener('change', () => {
+    settings.streaming = streaming.checked;
+    void flushSave();
+  });
+
   const timeout = $<HTMLInputElement>('#timeout');
   const out = $('#timeout-value');
   timeout.min = String(TIMEOUT_RANGE.min);

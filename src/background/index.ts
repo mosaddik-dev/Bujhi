@@ -1,10 +1,10 @@
-import { isLang } from '../shared/lang.ts';
+import { isLang, isReplyTone } from '../shared/lang.ts';
 import { ADAPTERS } from '../providers/index.ts';
-import type { Request, ReplyTo, TranslateResult } from '../shared/messages.ts';
+import { TRANSLATE_PORT, type PortMessage, type Request, type ReplyTo, type TranslateRequest, type TranslateResult } from '../shared/messages.ts';
 import { voiceReady, type Settings } from '../shared/settings.ts';
 import { loadSettings, onSettingsChanged, restrictStorageToExtension } from '../shared/storage.ts';
 import { relaySpeechEnded, speak, stopSpeech } from './speech.ts';
-import { createTranslator } from './translator.ts';
+import { createTranslator, type TranslateOptions } from './translator.ts';
 import { openQuickWindow, triggerOnTab } from './trigger.ts';
 
 const MENU_ID = 'bujhi-translate';
@@ -74,8 +74,6 @@ function replyTarget(sender: chrome.runtime.MessageSender): ReplyTo | null {
 
 function handle(msg: Request, sender: chrome.runtime.MessageSender): Promise<unknown> | null {
   switch (msg.type) {
-    case 'translate':
-      return translateForUi(msg);
     case 'speak':
       return getSettings().then((s) => speak(s, msg, replyTarget(sender)));
     case 'stopSpeech':
@@ -92,13 +90,37 @@ function handle(msg: Request, sender: chrome.runtime.MessageSender): Promise<unk
   }
 }
 
-async function translateForUi(msg: Extract<Request, { type: 'translate' }>): Promise<TranslateResult> {
-  const outcome = await translator.translate({
-    text: String(msg.text ?? ''),
-    from: isLang(msg.from) ? msg.from : undefined,
-    to: isLang(msg.to) ? msg.to : undefined,
-    fresh: !!msg.fresh,
+// One port per translation: stream partial text back; the card disconnecting cancels the request.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== TRANSLATE_PORT || port.sender?.id !== chrome.runtime.id) return port.disconnect();
+  const controller = new AbortController();
+  let open = true;
+  port.onDisconnect.addListener(() => {
+    open = false;
+    controller.abort();
   });
+  const post = (msg: PortMessage) => {
+    if (open) port.postMessage(msg);
+  };
+  port.onMessage.addListener((msg: TranslateRequest) => {
+    void translateForUi(msg, {
+      signal: controller.signal,
+      onUpdate: (u) => post(u.type === 'delta' ? { type: 'delta', text: u.text } : { type: 'reset' }),
+    }).then((result) => post({ type: 'result', result }));
+  });
+});
+
+async function translateForUi(msg: TranslateRequest, options: TranslateOptions): Promise<TranslateResult> {
+  const outcome = await translator.translate(
+    {
+      text: String(msg.text ?? ''),
+      from: isLang(msg.from) ? msg.from : undefined,
+      to: isLang(msg.to) ? msg.to : undefined,
+      tone: isReplyTone(msg.tone) ? msg.tone : undefined,
+      fresh: !!msg.fresh,
+    },
+    options,
+  );
   if (!outcome.ok) return outcome;
   const settings = await getSettings();
   const voice = voiceReady(settings, outcome.to);

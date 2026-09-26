@@ -10,7 +10,7 @@ export type ProviderErrorKind =
   | 'bad_response'
   | 'permission';
 
-export type ErrorCode = ProviderErrorKind | 'empty' | 'too_long' | 'no_provider' | 'all_failed' | 'unavailable';
+export type ErrorCode = ProviderErrorKind | 'empty' | 'too_long' | 'no_provider' | 'all_failed' | 'unavailable' | 'cancelled';
 
 export const MAX_CHARS = 6000;
 
@@ -30,6 +30,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   permission: 'Bujhi needs access to your custom endpoint. Allow it in Settings.',
   all_failed: "Couldn't translate right now — every provider failed.",
   unavailable: 'Bujhi was updated. Reload this page to keep using it.',
+  cancelled: 'Cancelled.',
 };
 
 /** Short labels used in the "details" line (e.g. "Gemini: rate limited · Groq: bad key"). */

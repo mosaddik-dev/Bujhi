@@ -1,5 +1,5 @@
 import { tuningFor } from './catalog.ts';
-import { postJson, sendWithFallback } from './http.ts';
+import { postJson, postSse, sendWithFallback } from './http.ts';
 import { examples, maxOutputTokens, systemPrompt } from './prompt.ts';
 import { ProviderError, type Adapter } from './types.ts';
 
@@ -10,9 +10,9 @@ export function chatCompletionsUrl(endpoint: string): string {
 }
 
 /** OpenAI Chat Completions — used by Groq, OpenRouter and any custom compatible server. */
-export const openaiAdapter: Adapter = async (provider, job, signal) => {
+export const openaiAdapter: Adapter = async (provider, job, signal, onDelta) => {
   const messages = [
-    { role: 'system', content: systemPrompt(job.from) },
+    { role: 'system', content: systemPrompt(job.from, job.tone) },
     ...examples(job.from).flatMap(([source, target]) => [
       { role: 'user', content: source },
       { role: 'assistant', content: target },
@@ -31,6 +31,24 @@ export const openaiAdapter: Adapter = async (provider, job, signal) => {
   const headers: Record<string, string> = { ...provider.headers };
   if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`;
   const url = chatCompletionsUrl(provider.endpoint);
+
+  if (onDelta) {
+    let full = '';
+    const read = (event: unknown) => {
+      const choice = (event as { choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }> })?.choices?.[0];
+      const chunk = choice?.delta?.content;
+      if (typeof chunk === 'string' && chunk) {
+        full += chunk;
+        onDelta(chunk);
+      }
+      return typeof choice?.finish_reason === 'string' && !!choice.finish_reason;
+    };
+    await sendWithFallback({ ...tuned, stream: true }, { ...minimal, stream: true }, (body) =>
+      postSse(url, headers, body, signal, provider.apiKey, read),
+    );
+    if (!full.trim()) throw new ProviderError('bad_response', 'Empty stream');
+    return full;
+  }
 
   const data = await sendWithFallback(tuned, minimal, (body) => postJson(url, headers, body, signal, provider.apiKey));
   return readContent(data);

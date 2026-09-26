@@ -1,11 +1,27 @@
 import type { ProviderId } from '../providers/catalog.ts';
 import type { ErrorCode } from './errors.ts';
-import type { Lang } from './lang.ts';
+import type { Lang, ReplyTone } from './lang.ts';
 import type { UiSettings } from './settings.ts';
+
+/**
+ * Translations go over a short-lived Port (one per request) so the worker can stream partial text
+ * back and the card can cancel by disconnecting. Everything else is a one-shot message.
+ */
+export const TRANSLATE_PORT = 'bujhi-translate';
+
+export interface TranslateRequest {
+  text: string;
+  from?: Lang;
+  to?: Lang;
+  tone?: ReplyTone;
+  fresh?: boolean;
+}
+
+/** Service worker → card over the translate port. */
+export type PortMessage = { type: 'delta'; text: string } | { type: 'reset' } | { type: 'result'; result: TranslateResult };
 
 /** Page/UI → service worker. */
 export type Request =
-  | { type: 'translate'; text: string; from?: Lang; to?: Lang; fresh?: boolean }
   | { type: 'speak'; id: string; text: string; lang: Lang }
   | { type: 'stopSpeech' }
   | { type: 'openSettings' }

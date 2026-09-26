@@ -1,5 +1,6 @@
 import { ERROR_MESSAGES } from '../shared/errors.ts';
-import type { Request, SimpleResult, TabMessage, TranslateResult } from '../shared/messages.ts';
+import type { Request, SimpleResult, TabMessage } from '../shared/messages.ts';
+import { translateViaPort } from '../shared/translateClient.ts';
 import { Card, type CardBridge } from '../ui/card.ts';
 import { captureContext, probe } from './context.ts';
 import { replaceText } from './editable.ts';
@@ -26,7 +27,7 @@ async function send<T>(message: Request): Promise<T> {
 }
 
 const bridge: CardBridge = {
-  translate: (req) => send<TranslateResult>({ type: 'translate', ...req }),
+  translate: translateViaPort,
   speak: (id, text, lang) => send<SimpleResult>({ type: 'speak', id, text, lang }),
   stopSpeech: () => void send({ type: 'stopSpeech' }).catch(() => {}),
   openSettings: () => void send({ type: 'openSettings' }).catch(() => {}),

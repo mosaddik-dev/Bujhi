@@ -54,6 +54,8 @@ export interface Settings {
   /** Array order is the fallback order. */
   providers: ProviderSettings[];
   timeoutSec: number;
+  /** Show translations word by word as the model writes them. */
+  streaming: boolean;
   tts: TtsSettings;
   ui: UiSettings;
 }
@@ -66,6 +68,7 @@ export function defaultSettings(): Settings {
   return {
     providers: PROVIDER_IDS.map((id) => ({ id, enabled: id !== 'custom', apiKey: '', model: '', endpoint: '' })),
     timeoutSec: TIMEOUT_RANGE.default,
+    streaming: true,
     tts: {
       keys: [],
       model: '',
@@ -144,6 +147,7 @@ export function normalizeSettings(raw: unknown): Settings {
   return {
     providers,
     timeoutSec,
+    streaming: bool(input.streaming, true),
     // An API key pasted into the model field (an easy mistake) would break every request.
     tts: { keys, model: /^sk_/i.test(str(tts.model).trim()) ? '' : str(tts.model), autoPlay: bool(tts.autoPlay, true), voices: { en: voice('en'), bn: voice('bn') } },
     ui: {

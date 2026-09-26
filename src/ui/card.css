@@ -57,6 +57,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card,
+  .out.streaming::after,
   .skeleton i {
     animation: none !important;
   }
@@ -417,4 +418,53 @@ kbd {
   height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
+}
+
+/* Streaming caret: only animates while a translation is being written. */
+.out.streaming::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: caret 1s steps(1) infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Reply tone */
+
+.tones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 14px 2px;
+  flex: none;
+}
+
+.tones button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.tones button:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.tones button[aria-checked='true'] {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
 }

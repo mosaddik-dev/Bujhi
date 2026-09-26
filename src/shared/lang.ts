@@ -20,6 +20,14 @@ export function otherLang(lang: Lang): Lang {
   return lang === 'en' ? 'bn' : 'en';
 }
 
+/** Style for replies you're writing; 'auto' keeps the source's own tone. */
+export type ReplyTone = 'auto' | 'casual' | 'polite' | 'professional';
+export const REPLY_TONES: readonly ReplyTone[] = ['auto', 'casual', 'polite', 'professional'];
+
+export function isReplyTone(value: unknown): value is ReplyTone {
+  return REPLY_TONES.includes(value as ReplyTone);
+}
+
 export function isLang(value: unknown): value is Lang {
   return value === 'en' || value === 'bn';
 }

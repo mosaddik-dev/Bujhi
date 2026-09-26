@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Bujhi — English ⇄ Bangla",
   "short_name": "Bujhi",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Select text on any site and get a natural English ⇄ Bangla translation. Bring your own AI key.",
   "minimum_chrome_version": "116",
   "icons": {

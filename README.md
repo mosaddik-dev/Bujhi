@@ -10,6 +10,10 @@ Bujhi (বুঝি, "I understand") is a Manifest V3 Chrome extension that tran
 | **Alt+B** with nothing selected | Opens a small type-to-translate box |
 | Right-click, then **Translate with Bujhi** | Same as Alt+B |
 
+When you're writing a reply, the card also shows **Auto · Casual · Polite · Professional**. Pick one to re-translate in that tone. For Bangla output this sets তুমি or আপনি; for English it changes the phrasing. Each tone's result is cached separately.
+
+Translations **stream** word by word as the model writes them. You can switch this off in Settings → Advanced to show each translation all at once.
+
 The direction is detected automatically. Click the `English → বাংলা` label on the card to flip it, which also covers romanized Bangla ("ami ashchi").
 
 ## Build and load
@@ -87,6 +91,16 @@ It costs ~130 extra input tokens per request, with no measurable latency. The ou
 To add a provider:
 - If it speaks an existing protocol, add one catalog entry.
 - If it's a new protocol, also add one adapter and register it in `providers/index.ts`.
+
+## How streaming works
+
+- Each translation opens a short-lived `chrome.runtime` Port to the service worker. The worker calls the provider's streaming API (Gemini `streamGenerateContent?alt=sse`, OpenAI-compatible `stream: true`) and forwards the text so far.
+- The card repaints at most once per animation frame and only updates the text node, so fast streams stay cheap.
+- The worker stops reading as soon as the provider marks the last chunk. It doesn't wait for the server to close the connection, which can lag seconds behind.
+- Closing the card disconnects the Port, which aborts the provider request, so no tokens are wasted on a translation nobody reads.
+- The per-provider timeout restarts on every chunk, so a slow but steady answer doesn't count as a failure.
+- If a provider fails mid-stream, the card clears and the next provider in the fallback chain starts over.
+- With streaming off, the same Port carries a single final result.
 
 ## How fallback works
 

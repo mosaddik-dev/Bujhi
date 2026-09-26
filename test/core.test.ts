@@ -39,6 +39,8 @@ test('HTTP errors are classified for fallback', () => {
   assert.equal(limited.kind, 'rate_limit');
   assert.equal(limited.retryAfterMs, 7000);
   assert.equal(errorFromStatus(429, 'You exceeded your current quota', null).kind, 'quota');
+  const perMinute = errorFromStatus(429, 'You exceeded your current quota … Please retry in 44.4s.', null);
+  assert.deepEqual([perMinute.kind, perMinute.retryAfterMs], ['rate_limit', 45000]);
   assert.equal(errorFromStatus(503, 'overloaded', null).kind, 'server');
 });
 
@@ -57,6 +59,8 @@ test('normalizeSettings repairs, migrates and keeps order', () => {
   assert.deepEqual(s.tts.keys, [{ key: 'old-single-key', adminKey: '', monthlyCredits: 0 }]);
   assert.equal(voiceReady(s, 'bn'), true);
   assert.equal(s.tts.autoPlay, true);
+  assert.equal(s.streaming, true);
+  assert.equal(normalizeSettings({ streaming: false }).streaming, false);
   assert.equal(normalizeSettings({ tts: { autoPlay: false } }).tts.autoPlay, false);
   assert.equal(normalizeSettings({ tts: { model: 'sk_car_pasted_by_mistake' } }).tts.model, '');
   assert.equal(normalizeSettings({ tts: { model: 'sonic-3.5' } }).tts.model, 'sonic-3.5');

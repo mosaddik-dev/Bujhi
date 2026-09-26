@@ -1,4 +1,4 @@
-import type { Lang } from '../shared/lang.ts';
+import type { Lang, ReplyTone } from '../shared/lang.ts';
 
 /**
  * Translation prompt, one per direction, plus two short example pairs that show the model the
@@ -16,7 +16,8 @@ const COMMON =
 const SYSTEM: Record<Lang, string> = {
   en: `You translate English into natural Bangla the way people in Bangladesh actually talk and text.
 - Use everyday colloquial Bangla (চলিত), never সাধু or bookish, Sanskrit-heavy words. Keep English words Bangladeshis commonly use (office, meeting, phone, file, online).
-- Match formality: তুমি for casual/friendly text, আপনি for formal, professional or respectful text, তুই only for very rough slang between close friends.
+- Match formality: তুমি for casual/friendly text, আপনি for formal, professional or respectful text. Use তুই only if the English itself is crude slang (e.g. "wtf dude"); "hey", "lol" or "bro" alone are just casual → তুমি.
+- Use standard colloquial verb forms (পাঠিয়েছ, হয়েছে, করেছি), not regional spellings (পাঠাইছিস, হইছে, করছি for করেছি).
 - Use Bangla punctuation (।).
 ${COMMON}`,
   bn: `You translate Bangla — in Bengali script or romanized "Banglish" — into natural English the way a native speaker would say it.
@@ -37,8 +38,30 @@ const EXAMPLES: Record<Lang, ReadonlyArray<readonly [string, string]>> = {
   ],
 };
 
-export function systemPrompt(from: Lang): string {
-  return SYSTEM[from];
+/** Extra instruction when the user picks a reply tone; keyed by source language (i.e. what we write into). */
+const TONE: Record<Lang, Record<Exclude<ReplyTone, 'auto'>, string>> = {
+  en: {
+    casual: 'Style override: make it relaxed and friendly — use তুমি (never তুই) and everyday words.',
+    polite: 'Style override: make it warm and polite — use আপনি and respectful wording.',
+    professional: 'Style override: make it professional and concise for work — use আপনি, clear standard wording, no slang.',
+  },
+  bn: {
+    casual: 'Style override: make it casual and friendly, like texting a friend — relaxed wording and contractions.',
+    polite: 'Style override: make it warm and polite — courteous phrasing, softened requests.',
+    professional: 'Style override: make it professional and concise, as in a work email — no slang, but still natural, idiomatic English.',
+  },
+};
+
+export function systemPrompt(from: Lang, tone: ReplyTone = 'auto'): string {
+  return tone === 'auto' ? SYSTEM[from] : `${SYSTEM[from]}\n${TONE[from][tone]}`;
+}
+
+/** Hide what a stream can't show yet: reasoning blocks (even unfinished) and a leading "Translation:" label. */
+export function cleanPartial(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?(<\/think>|$)/gi, '')
+    .replace(/^\s*(?:translation|translated text|অনুবাদ)\s*[:：]\s*/i, '')
+    .trimStart();
 }
 
 export function examples(from: Lang): ReadonlyArray<readonly [string, string]> {

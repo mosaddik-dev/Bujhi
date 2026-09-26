@@ -1,15 +1,19 @@
 import { ProviderError } from './types.ts';
 
-/** POST JSON and map every failure mode to a typed ProviderError. `secret` is redacted from error text. */
-export async function postJson(
-  url: string,
-  headers: Record<string, string>,
-  body: unknown,
-  signal: AbortSignal,
-  secret: string,
-): Promise<unknown> {
+const transportError = (signal: AbortSignal) =>
+  signal.aborted ? new ProviderError('timeout', 'Request timed out') : new ProviderError('network', 'Network request failed');
+
+const parse = (text: string): unknown => {
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** POST and return the response, or throw a typed ProviderError for transport or HTTP errors. */
+async function post(url: string, headers: Record<string, string>, body: unknown, signal: AbortSignal, secret: string) {
   let res: Response;
-  let text: string;
   try {
     res = await fetch(url, {
       method: 'POST',
@@ -18,25 +22,83 @@ export async function postJson(
       signal,
       credentials: 'omit',
     });
-    text = await res.text();
   } catch {
-    if (signal.aborted) throw new ProviderError('timeout', 'Request timed out');
-    throw new ProviderError('network', 'Network request failed');
+    throw transportError(signal);
   }
-
-  let data: unknown = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    // Non-JSON body; handled below.
-  }
-
   if (!res.ok) {
-    const message = redact(extractMessage(data) ?? (text.slice(0, 200) || res.statusText), secret);
+    const text = await res.text().catch(() => '');
+    const message = redact(extractMessage(parse(text)) ?? (text.slice(0, 200) || res.statusText), secret);
     throw errorFromStatus(res.status, message, res.headers.get('retry-after'));
   }
+  return res;
+}
+
+/** POST JSON and map every failure mode to a typed ProviderError. `secret` is redacted from error text. */
+export async function postJson(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  signal: AbortSignal,
+  secret: string,
+): Promise<unknown> {
+  const res = await post(url, headers, body, signal, secret);
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    throw transportError(signal);
+  }
+  const data = parse(text);
   if (data === null) throw new ProviderError('bad_response', 'Response was not JSON');
   return data;
+}
+
+/**
+ * POST and read a Server-Sent Events stream, calling `onEvent` with each parsed `data:` JSON payload.
+ * `onEvent` returning true means "that was the last one": we stop reading instead of waiting for the
+ * server to close the connection (which can lag seconds behind the final chunk).
+ * An `{error}` payload mid-stream becomes a ProviderError.
+ */
+export async function postSse(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  signal: AbortSignal,
+  secret: string,
+  onEvent: (data: unknown) => boolean | void,
+): Promise<void> {
+  const res = await post(url, { Accept: 'text/event-stream', ...headers }, body, signal, secret);
+  if (!res.body) throw new ProviderError('bad_response', 'Empty stream');
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let newline: number;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') return;
+        const data = parse(payload);
+        if (!data) continue;
+        const error = extractMessage((data as { error?: unknown }).error ? data : null);
+        if (error) throw new ProviderError('server', redact(error, secret));
+        if (onEvent(data) === true) {
+          void reader.cancel().catch(() => {});
+          return;
+        }
+      }
+    }
+  } catch (e) {
+    if (e instanceof ProviderError) throw e;
+    throw transportError(signal);
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export function errorFromStatus(status: number, message: string, retryAfter: string | null): ProviderError {
@@ -44,8 +106,11 @@ export function errorFromStatus(status: number, message: string, retryAfter: str
   if (status === 401 || status === 403) return new ProviderError('auth', detail);
   if (status === 402) return new ProviderError('quota', detail, 5 * 60_000);
   if (status === 429) {
-    const quota = /quota|credit|billing|exceeded your/i.test(message);
-    return new ProviderError(quota ? 'quota' : 'rate_limit', detail, parseRetryAfter(retryAfter));
+    // Gemini's free tier says "exceeded your current quota … retry in 44.4s": that's a per-minute limit, not empty credits.
+    const hinted = message.match(/retry in ([\d.]+)\s*s/i);
+    const wait = parseRetryAfter(retryAfter) ?? (hinted ? Math.ceil(Number(hinted[1])) * 1000 : undefined);
+    const quota = !hinted && /quota|credit|billing|exceeded your/i.test(message);
+    return new ProviderError(quota ? 'quota' : 'rate_limit', detail, wait);
   }
   if (status === 404) return new ProviderError('model', detail);
   if (status === 408 || status === 504) return new ProviderError('timeout', detail);

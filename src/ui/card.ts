@@ -13,15 +13,16 @@ import markIcon from '../../assets/icons/mark.svg';
 import type { EditableTarget } from '../content/editable.ts';
 import type { PageContext } from '../content/context.ts';
 import { SETTINGS_ERRORS, ERROR_MESSAGES } from '../shared/errors.ts';
-import { detectLang, LANG_NAME, otherLang, type Lang } from '../shared/lang.ts';
-import type { SimpleResult, TranslateResult } from '../shared/messages.ts';
+import { detectLang, LANG_NAME, otherLang, REPLY_TONES, type Lang, type ReplyTone } from '../shared/lang.ts';
+import type { SimpleResult, TranslateRequest, TranslateResult } from '../shared/messages.ts';
+import type { ClientOptions } from '../shared/translateClient.ts';
 import { DEFAULT_UI, type UiSettings } from '../shared/settings.ts';
 import css from './card.css';
 import { applyTheme, themeStyleUpdater } from './theme.ts';
 
 /** How the card talks to the extension; the content script and the popup page each provide one. */
 export interface CardBridge {
-  translate(req: { text: string; from?: Lang; to?: Lang; fresh?: boolean }): Promise<TranslateResult>;
+  translate(req: TranslateRequest, options?: ClientOptions): Promise<TranslateResult>;
   speak(id: string, text: string, lang: Lang): Promise<SimpleResult>;
   stopSpeech(): void;
   openSettings(): void;
@@ -37,7 +38,11 @@ export interface CardOptions {
   onClose?(): void;
 }
 
-type Status = 'idle' | 'loading' | 'done' | 'error';
+type Status = 'idle' | 'loading' | 'streaming' | 'done' | 'error';
+
+const TONE_LABEL: Record<ReplyTone, string> = { auto: 'Auto', casual: 'Casual', polite: 'Polite', professional: 'Professional' };
+/** Last reply tone picked on this page; reused for the next reply. */
+let lastTone: ReplyTone = 'auto';
 type Speech = 'idle' | 'loading' | 'playing';
 type Done = Extract<TranslateResult, { ok: true }>;
 type Failed = Extract<TranslateResult, { ok: false }>;
@@ -58,7 +63,16 @@ export class Card {
 
   private host: HTMLElement | null = null;
   private root: ShadowRoot | null = null;
-  private el: { card: HTMLElement; dirFrom: HTMLElement; dirTo: HTMLElement; compose: HTMLElement; input: HTMLTextAreaElement; body: HTMLElement; foot: HTMLElement } | null = null;
+  private el: {
+    card: HTMLElement;
+    dirFrom: HTMLElement;
+    dirTo: HTMLElement;
+    compose: HTMLElement;
+    input: HTMLTextAreaElement;
+    body: HTMLElement;
+    tones: HTMLElement;
+    foot: HTMLElement;
+  } | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private cleanup: Array<() => void> = [];
 
@@ -80,6 +94,10 @@ export class Card {
   private copied = false;
   private autoReplace = false;
   private ui: UiSettings = DEFAULT_UI;
+  private tone: ReplyTone = lastTone;
+  private partial = '';
+  private paintQueued = false;
+  private request: AbortController | null = null;
   private updateTheme: ((accent: UiSettings['accent']) => void) | null = null;
 
   constructor(bridge: CardBridge, container: HTMLElement, options: CardOptions = {}) {
@@ -115,6 +133,7 @@ export class Card {
     this.result = null;
     this.error = null;
     this.toast = '';
+    this.tone = lastTone;
 
     const text = ctx.text.trim();
     this.composing = !text;
@@ -138,6 +157,8 @@ export class Card {
   close(): void {
     if (!this.host) return;
     this.seq++;
+    this.request?.abort();
+    this.request = null;
     this.stopSpeaking();
     clearTimeout(this.toastTimer);
     for (const off of this.cleanup) off();
@@ -190,6 +211,9 @@ export class Card {
           <div class="hint"><kbd>Enter</kbd> translate · <kbd>Shift</kbd> + <kbd>Enter</kbd> new line</div>
         </div>
         <div class="body" aria-live="polite"></div>
+        <div class="tones" role="radiogroup" aria-label="Reply tone" hidden>${REPLY_TONES.map(
+          (t) => `<button data-act="tone" data-tone="${t}" role="radio">${TONE_LABEL[t]}</button>`,
+        ).join('')}</div>
         <div class="foot"></div>
       </div>`;
 
@@ -201,6 +225,7 @@ export class Card {
       compose: q('.compose'),
       input: q('textarea'),
       body: q('.body'),
+      tones: q('.tones'),
       foot: q('.foot'),
     };
     this.updateTheme = themeStyleUpdater(root.querySelector('style[data-theme]')!, '.card');
@@ -223,7 +248,7 @@ export class Card {
 
     this.listen(card, 'click', (e) => {
       const button = (e.target as Element).closest<HTMLButtonElement>('button[data-act]');
-      if (button && !button.disabled) this.act(button.dataset.act!);
+      if (button && !button.disabled) this.act(button.dataset.act!, button);
     });
     // Keep focus + selection in the page's editor when pressing our buttons.
     this.listen(card, 'mousedown', (e) => {
@@ -269,8 +294,10 @@ export class Card {
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
-  private act(action: string): void {
+  private act(action: string, button: HTMLElement): void {
     switch (action) {
+      case 'tone':
+        return this.setTone(button.dataset.tone as ReplyTone);
       case 'close':
         return this.close();
       case 'settings':
@@ -304,21 +331,54 @@ export class Card {
     else this.renderHead();
   }
 
+  /** Tone buttons only make sense when you're writing (a text box, or the type-to-translate box). */
+  private get writing(): boolean {
+    return !!this.editable || this.composing;
+  }
+
+  private setTone(tone: ReplyTone): void {
+    if (tone === this.tone) return;
+    this.tone = lastTone = tone;
+    void this.translate(false);
+  }
+
   private async translate(fresh: boolean): Promise<void> {
     if (!this.source) return;
     const seq = ++this.seq;
     this.stopSpeaking();
+    this.request?.abort();
+    const request = (this.request = new AbortController());
     this.status = 'loading';
     this.error = null;
+    this.partial = '';
     this.render();
+
+    const onDelta = (text: string) => {
+      if (seq !== this.seq || !this.host) return;
+      this.partial = text;
+      if (!text) {
+        // A provider failed mid-stream; the next one starts over.
+        this.status = 'loading';
+        return this.render();
+      }
+      if (this.status !== 'streaming') {
+        this.status = 'streaming';
+        return this.render();
+      }
+      this.paintStream();
+    };
 
     let res: TranslateResult;
     try {
-      res = await this.bridge.translate({ text: this.source, from: this.dir?.from, to: this.dir?.to, fresh });
+      res = await this.bridge.translate(
+        { text: this.source, from: this.dir?.from, to: this.dir?.to, tone: this.writing ? this.tone : 'auto', fresh },
+        { onDelta, signal: request.signal },
+      );
     } catch (e) {
       res = { ok: false, code: 'unavailable', message: e instanceof Error ? e.message : ERROR_MESSAGES.unavailable };
     }
-    if (seq !== this.seq || !this.host) return;
+    if (seq !== this.seq || !this.host || (!res.ok && res.code === 'cancelled')) return;
+    this.request = null;
 
     if (res.ok) {
       this.status = 'done';
@@ -412,7 +472,28 @@ export class Card {
   private render(): void {
     this.renderHead();
     this.renderBody();
+    this.renderTones();
     this.renderFoot();
+  }
+
+  /** Streaming chunks can arrive faster than frames; repaint at most once per frame, text only. */
+  private paintStream(): void {
+    if (this.paintQueued) return;
+    this.paintQueued = true;
+    requestAnimationFrame(() => {
+      this.paintQueued = false;
+      const out = this.el?.body.querySelector('.out');
+      if (out && this.status === 'streaming') out.textContent = this.partial;
+    });
+  }
+
+  private renderTones(): void {
+    const tones = this.el!.tones;
+    tones.hidden = !this.writing || this.status === 'idle';
+    if (tones.hidden) return;
+    for (const b of tones.querySelectorAll<HTMLElement>('[data-tone]')) {
+      b.setAttribute('aria-checked', String(b.dataset.tone === this.tone));
+    }
   }
 
   private renderHead(): void {
@@ -427,6 +508,9 @@ export class Card {
     const body = this.el!.body;
     if (this.status === 'loading') {
       body.innerHTML = '<div class="skeleton" aria-label="Translating…"><i></i><i></i><i></i></div>';
+    } else if (this.status === 'streaming') {
+      const to = this.dir?.to ?? otherLang(detectLang(this.source));
+      body.innerHTML = `<p class="out streaming" lang="${to}">${esc(this.partial)}</p>`;
     } else if (this.status === 'done' && this.result) {
       body.innerHTML = `<p class="out" lang="${this.result.to}">${esc(this.result.text)}</p>`;
     } else if (this.status === 'error' && this.error) {
@@ -463,6 +547,8 @@ export class Card {
         : '';
       const retry = this.error.code === 'no_provider' || this.error.code === 'unavailable' ? '' : `<button class="btn" data-act="retry">${retryIcon}Try again</button>`;
       foot.innerHTML = `<span class="grow"></span>${retry}${settings}`;
+    } else if (this.status === 'streaming') {
+      foot.innerHTML = '<span class="meta">Writing…</span>';
     } else {
       foot.innerHTML = status;
     }
