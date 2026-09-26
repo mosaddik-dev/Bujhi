@@ -1,0 +1,48 @@
+import { tuningFor } from './catalog.ts';
+import { postJson, sendWithFallback } from './http.ts';
+import { maxOutputTokens, systemPrompt } from './prompt.ts';
+import { ProviderError, type Adapter } from './types.ts';
+
+/** Accepts a base URL (".../v1") or the full ".../chat/completions" URL. */
+export function chatCompletionsUrl(endpoint: string): string {
+  const base = endpoint.trim().replace(/\/+$/, '');
+  return /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
+}
+
+/** OpenAI Chat Completions — used by Groq, OpenRouter and any custom compatible server. */
+export const openaiAdapter: Adapter = async (provider, job, signal) => {
+  const messages = [
+    { role: 'system', content: systemPrompt(job.from) },
+    { role: 'user', content: job.text },
+  ];
+  const minimal = { model: provider.model, messages };
+  const tuning = tuningFor(provider.model);
+  const tuned = {
+    ...minimal,
+    temperature: 0.3,
+    max_tokens: maxOutputTokens(job.text),
+    ...(tuning.reasoningEffort ? { reasoning_effort: tuning.reasoningEffort } : {}),
+  };
+
+  const headers: Record<string, string> = { ...provider.headers };
+  if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`;
+  const url = chatCompletionsUrl(provider.endpoint);
+
+  const data = await sendWithFallback(tuned, minimal, (body) => postJson(url, headers, body, signal, provider.apiKey));
+  return readContent(data);
+};
+
+function readContent(data: unknown): string {
+  const choice = (data as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }> })?.choices?.[0];
+  const content = choice?.message?.content;
+  let text = '';
+  if (typeof content === 'string') text = content;
+  else if (Array.isArray(content)) {
+    text = content.map((part) => (typeof part?.text === 'string' ? part.text : '')).join('');
+  }
+  if (!text.trim()) {
+    const reason = choice?.finish_reason ? ` (finish reason: ${choice.finish_reason})` : '';
+    throw new ProviderError('bad_response', `Empty completion${reason}`);
+  }
+  return text;
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bujhi settings</title>
+    <link rel="icon" href="icons/icon-32.png" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="top">
+        <img src="icons/icon-128.png" alt="" width="44" height="44" />
+        <div>
+          <h1>Bujhi</h1>
+          <p class="sub">Natural English ⇄ বাংলা, anywhere on the web.</p>
+        </div>
+        <span class="saved" id="saved" role="status" aria-live="polite"></span>
+      </header>
+
+      <section class="panel how">
+        <ol>
+          <li><b>Select</b> text on any page, or click into a text box you're typing in.</li>
+          <li>Press <kbd id="shortcut">Alt+B</kbd> or click the Bujhi icon.</li>
+          <li><b>Copy</b>, <b>listen</b>, or <b>replace</b> your typed Bangla with natural English.</li>
+          <li>Typing in a box? <kbd id="shortcut-instant">Alt+Shift+B</kbd> translates and replaces it instantly (<kbd>Ctrl+Z</kbd> undoes).</li>
+        </ol>
+        <button class="link" id="change-shortcut" type="button">Change shortcut</button>
+      </section>
+
+      <section class="block">
+        <div class="block-head">
+          <h2>Translation providers</h2>
+          <p>Bujhi tries providers from top to bottom. If one fails, times out or is rate-limited, the next one answers.</p>
+        </div>
+        <div id="providers" class="stack"></div>
+      </section>
+
+      <section class="block">
+        <div class="block-head">
+          <h2>Voice</h2>
+          <p>Read translations aloud with <a href="https://cartesia.ai" target="_blank" rel="noopener">Cartesia</a>. English and Bangla are set up separately.</p>
+        </div>
+
+        <div class="panel">
+          <div class="field">
+            <div class="label-row">
+              <span class="label">Cartesia API keys</span>
+              <a href="https://play.cartesia.ai/keys" target="_blank" rel="noopener">Get a key</a>
+            </div>
+            <div id="tts-keys" class="keys"></div>
+            <button class="ghost" id="add-key" type="button"></button>
+            <p class="hint">Keys are tried in order. If one is rejected, out of credits or rate-limited, the next takes over.</p>
+          </div>
+          <div class="field toggle-row">
+            <div>
+              <span class="label">Auto-play</span>
+              <p class="hint">Read each translation aloud as soon as it appears. When off, press the speaker button on the card to listen.</p>
+            </div>
+            <label class="switch" title="Auto-play translations"><input type="checkbox" id="auto-play" aria-label="Auto-play translations"><span></span></label>
+          </div>
+          <label class="field">
+            <span class="label">Voice model</span>
+            <input id="tts-model" type="text" spellcheck="false" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="voices">
+          <div class="panel voice" data-lang="en"></div>
+          <div class="panel voice" data-lang="bn"></div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="block-head"><h2>Advanced</h2></div>
+        <div class="panel">
+          <label class="field">
+            <div class="label-row">
+              <span class="label">Wait per provider before falling back</span>
+              <output id="timeout-value"></output>
+            </div>
+            <input id="timeout" type="range" min="4" max="60" step="1" />
+          </label>
+        </div>
+      </section>
+
+      <footer class="foot">
+        API keys are stored only in this browser (<code>chrome.storage.local</code>, never synced) and are sent only to
+        the provider they belong to. Web pages never see them.
+      </footer>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

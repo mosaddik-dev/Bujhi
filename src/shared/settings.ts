@@ -1,0 +1,132 @@
+import { PROVIDER_IDS, PROVIDERS, type ProviderId } from '../providers/catalog.ts';
+import type { Lang } from './lang.ts';
+
+export interface ProviderSettings {
+  id: ProviderId;
+  enabled: boolean;
+  apiKey: string;
+  /** Empty = catalog default. */
+  model: string;
+  /** Empty = catalog default. */
+  endpoint: string;
+}
+
+export interface VoiceSettings {
+  enabled: boolean;
+  voiceId: string;
+  voiceName: string;
+}
+
+export interface CartesiaKey {
+  key: string;
+  /** Optional admin key (sk_car_admin_…) of the same account — only used to read credit usage in Settings. */
+  adminKey: string;
+  /** Optional monthly credit budget for this account; 0 = not set. */
+  monthlyCredits: number;
+}
+
+export interface TtsSettings {
+  /** Cartesia keys in fallback order: if one is rejected, out of credits or rate-limited, the next is used. */
+  keys: CartesiaKey[];
+  /** Empty = default Cartesia model. */
+  model: string;
+  /** Read results aloud automatically when that language's voice is on. Off = only via the Listen button. */
+  autoPlay: boolean;
+  voices: Record<Lang, VoiceSettings>;
+}
+
+export interface Settings {
+  /** Array order is the fallback order. */
+  providers: ProviderSettings[];
+  timeoutSec: number;
+  tts: TtsSettings;
+}
+
+export const TIMEOUT_RANGE = { min: 4, max: 60, default: 12 } as const;
+
+export function defaultSettings(): Settings {
+  return {
+    providers: PROVIDER_IDS.map((id) => ({ id, enabled: id !== 'custom', apiKey: '', model: '', endpoint: '' })),
+    timeoutSec: TIMEOUT_RANGE.default,
+    tts: {
+      keys: [],
+      model: '',
+      autoPlay: true,
+      voices: {
+        en: { enabled: false, voiceId: '', voiceName: '' },
+        bn: { enabled: false, voiceId: '', voiceName: '' },
+      },
+    },
+  };
+}
+
+const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback);
+const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback);
+const obj = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** Tolerant parse of whatever is in storage; always returns a complete, valid Settings object. */
+export function normalizeSettings(raw: unknown): Settings {
+  const base = defaultSettings();
+  const input = obj(raw);
+
+  const seen = new Set<ProviderId>();
+  const providers: ProviderSettings[] = [];
+  for (const item of Array.isArray(input.providers) ? input.providers : []) {
+    const p = obj(item);
+    const id = p.id as ProviderId;
+    if (!(id in PROVIDERS) || seen.has(id)) continue;
+    seen.add(id);
+    const fallback = base.providers.find((d) => d.id === id)!;
+    providers.push({
+      id,
+      enabled: bool(p.enabled, fallback.enabled),
+      apiKey: str(p.apiKey),
+      model: str(p.model),
+      endpoint: str(p.endpoint),
+    });
+  }
+  // Providers added in a later version are appended at the end of the user's order.
+  for (const d of base.providers) if (!seen.has(d.id)) providers.push(d);
+
+  const timeout = Number(input.timeoutSec);
+  const timeoutSec = Number.isFinite(timeout)
+    ? Math.min(TIMEOUT_RANGE.max, Math.max(TIMEOUT_RANGE.min, Math.round(timeout)))
+    : base.timeoutSec;
+
+  const tts = obj(input.tts);
+  const voices = obj(tts.voices);
+  const voice = (lang: Lang): VoiceSettings => {
+    const v = obj(voices[lang]);
+    return { enabled: bool(v.enabled, false), voiceId: str(v.voiceId), voiceName: str(v.voiceName) };
+  };
+
+  const rawKeys: unknown[] = Array.isArray(tts.keys) ? tts.keys : Array.isArray(tts.apiKeys) ? tts.apiKeys : [tts.apiKey];
+  const keys: CartesiaKey[] = rawKeys
+    .map((k) => (typeof k === 'string' ? { key: k } : obj(k)))
+    .filter((k) => typeof k.key === 'string')
+    .map((k) => {
+      const budget = Number(k.monthlyCredits);
+      return {
+        key: str(k.key),
+        adminKey: str(k.adminKey),
+        monthlyCredits: Number.isFinite(budget) && budget > 0 ? Math.round(budget) : 0,
+      };
+    });
+
+  return {
+    providers,
+    timeoutSec,
+    tts: { keys, model: str(tts.model), autoPlay: bool(tts.autoPlay, true), voices: { en: voice('en'), bn: voice('bn') } },
+  };
+}
+
+export function cartesiaKeys(settings: Settings): string[] {
+  return [...new Set(settings.tts.keys.map((k) => k.key.trim()).filter(Boolean))];
+}
+
+/** A voice is usable only when it is switched on, has a voice picked and at least one Cartesia key exists. */
+export function voiceReady(settings: Settings, lang: Lang): boolean {
+  const v = settings.tts.voices[lang];
+  return v.enabled && !!v.voiceId && cartesiaKeys(settings).length > 0;
+}
