@@ -9,6 +9,21 @@ export const CARTESIA = {
   timeoutMs: 15_000,
 } as const;
 
+/** Tone presets mapped to Cartesia `generation_config.emotion`; '' lets the model follow the text. */
+export const TONES: ReadonlyArray<{ id: string; label: string }> = [
+  { id: '', label: 'Natural' },
+  { id: 'neutral', label: 'Neutral' },
+  { id: 'calm', label: 'Calm' },
+  { id: 'content', label: 'Warm' },
+  { id: 'happy', label: 'Cheerful' },
+  { id: 'excited', label: 'Excited' },
+  { id: 'sympathetic', label: 'Gentle' },
+  { id: 'curious', label: 'Curious' },
+  { id: 'serene', label: 'Soft' },
+];
+
+export const SPEED_RANGE = { min: 0.6, max: 1.5, default: 1 } as const;
+
 export type TtsErrorKind = 'auth' | 'quota' | 'rate_limit' | 'voice' | 'bad_request' | 'server' | 'timeout' | 'network';
 
 export class TtsError extends Error {
@@ -89,6 +104,9 @@ export interface SynthesisInput {
   voiceId: string;
   lang: Lang;
   text: string;
+  /** Cartesia emotion; '' = natural. */
+  tone?: string;
+  speed?: number;
 }
 
 export async function synthesize(input: SynthesisInput): Promise<Blob> {
@@ -100,12 +118,20 @@ export async function synthesize(input: SynthesisInput): Promise<Blob> {
       transcript: input.text,
       voice: { id: input.voiceId },
       language: input.lang,
+      ...generationConfig(input),
       output_format: { container: 'mp3', sample_rate: 24000, bit_rate: 64000 },
     }),
   });
   const blob = await res.blob();
   if (!blob.size) throw new TtsError('server', 'Cartesia returned no audio.');
   return blob.type.startsWith('audio/') ? blob : new Blob([blob], { type: 'audio/mpeg' });
+}
+
+function generationConfig({ tone, speed }: SynthesisInput) {
+  const config: { emotion?: string; speed?: number } = {};
+  if (tone) config.emotion = tone;
+  if (speed && speed !== SPEED_RANGE.default) config.speed = speed;
+  return Object.keys(config).length ? { generation_config: config } : {};
 }
 
 export interface KeyFailure {

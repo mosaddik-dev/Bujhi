@@ -60,6 +60,10 @@ test('normalizeSettings repairs, migrates and keeps order', () => {
   assert.equal(normalizeSettings({ tts: { autoPlay: false } }).tts.autoPlay, false);
   assert.equal(normalizeSettings({ tts: { model: 'sk_car_pasted_by_mistake' } }).tts.model, '');
   assert.equal(normalizeSettings({ tts: { model: 'sonic-3.5' } }).tts.model, 'sonic-3.5');
+  const v = normalizeSettings({ tts: { voices: { en: { tone: 'calm', speed: 9 }, bn: { tone: 'shouting', speed: 0.83 } } } }).tts.voices;
+  assert.deepEqual([v.en.tone, v.en.speed, v.bn.tone, v.bn.speed], ['calm', 1.5, '', 0.85]);
+  assert.deepEqual(normalizeSettings({ ui: { theme: 'dark', accent: 'rose', textSize: 'lg' } }).ui, { theme: 'dark', accent: 'rose', textSize: 'lg' });
+  assert.deepEqual(normalizeSettings({ ui: { theme: 'neon', accent: 'plaid' } }).ui, { theme: 'system', accent: 'emerald', textSize: 'md' });
   assert.equal(voiceReady(s, 'en'), false);
   s.tts.voices.en.enabled = true;
   assert.equal(voiceReady(s, 'en'), true, 'on + key is enough; a voice is picked on first use');

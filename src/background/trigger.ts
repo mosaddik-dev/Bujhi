@@ -1,4 +1,5 @@
 import type { TabMessage } from '../shared/messages.ts';
+import type { UiSettings } from '../shared/settings.ts';
 
 const CONTENT_FILE = 'content.js';
 const QUICK_WINDOW_KEY = 'quickWindowId';
@@ -10,7 +11,12 @@ const QUICK_WINDOW_KEY = 'quickWindowId';
  * content.js ends with `__bujhi.probe()`, so each injection result is that frame's score:
  * 3 = selected text, 2 = text in a focused field, 1 = empty focused field, 0 = nothing.
  */
-export async function triggerOnTab(tab: chrome.tabs.Tab, frameId?: number, instant = false): Promise<void> {
+export async function triggerOnTab(
+  tab: chrome.tabs.Tab,
+  ui: UiSettings,
+  frameId?: number,
+  instant = false,
+): Promise<void> {
   const tabId = tab.id;
   if (tabId === undefined || tabId < 0) return openQuickWindow();
 
@@ -23,7 +29,7 @@ export async function triggerOnTab(tab: chrome.tabs.Tab, frameId?: number, insta
   }
 
   const target = frameId ?? pickFrame(results);
-  const message: TabMessage = { type: 'bujhi:run', instant };
+  const message: TabMessage = { type: 'bujhi:run', instant, ui };
   try {
     await chrome.tabs.sendMessage(tabId, message, { frameId: target });
   } catch {

@@ -46,6 +46,7 @@ if (!globalThis.__bujhi) {
       }
       // Drop the card object on close so nothing lingers in memory while idle.
       card ??= new Card(bridge, document.documentElement, { onClose: () => (card = null) });
+      if (msg.ui) card.setUi(msg.ui);
       // Instant mode only makes sense with text in a field; otherwise it behaves like the normal trigger.
       card.show(ctx, { autoReplace: !!msg.instant && !!ctx.editable && !!ctx.text.trim() });
     } else if (msg?.type === 'bujhi:speechEnded') {

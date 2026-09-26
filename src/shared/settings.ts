@@ -1,4 +1,6 @@
 import { PROVIDER_IDS, PROVIDERS, type ProviderId } from '../providers/catalog.ts';
+import { SPEED_RANGE, TONES } from '../tts/cartesia.ts';
+import { ACCENTS, type AccentId } from '../ui/theme.ts';
 import type { Lang } from './lang.ts';
 
 export interface ProviderSettings {
@@ -15,6 +17,19 @@ export interface VoiceSettings {
   enabled: boolean;
   voiceId: string;
   voiceName: string;
+  /** Cartesia emotion preset ('' = natural). */
+  tone: string;
+  /** 0.6–1.5, 1 = normal. */
+  speed: number;
+}
+
+export type ThemeMode = 'system' | 'light' | 'dark';
+export type TextSize = 'sm' | 'md' | 'lg';
+
+export interface UiSettings {
+  theme: ThemeMode;
+  accent: AccentId;
+  textSize: TextSize;
 }
 
 export interface CartesiaKey {
@@ -40,7 +55,10 @@ export interface Settings {
   providers: ProviderSettings[];
   timeoutSec: number;
   tts: TtsSettings;
+  ui: UiSettings;
 }
+
+export const DEFAULT_UI: UiSettings = { theme: 'system', accent: 'emerald', textSize: 'md' };
 
 export const TIMEOUT_RANGE = { min: 4, max: 60, default: 12 } as const;
 
@@ -53,10 +71,11 @@ export function defaultSettings(): Settings {
       model: '',
       autoPlay: true,
       voices: {
-        en: { enabled: false, voiceId: '', voiceName: '' },
-        bn: { enabled: false, voiceId: '', voiceName: '' },
+        en: { enabled: false, voiceId: '', voiceName: '', tone: '', speed: 1 },
+        bn: { enabled: false, voiceId: '', voiceName: '', tone: '', speed: 1 },
       },
     },
+    ui: { ...DEFAULT_UI },
   };
 }
 
@@ -98,8 +117,16 @@ export function normalizeSettings(raw: unknown): Settings {
   const voices = obj(tts.voices);
   const voice = (lang: Lang): VoiceSettings => {
     const v = obj(voices[lang]);
-    return { enabled: bool(v.enabled, false), voiceId: str(v.voiceId), voiceName: str(v.voiceName) };
+    const speed = Number(v.speed);
+    return {
+      enabled: bool(v.enabled, false),
+      voiceId: str(v.voiceId),
+      voiceName: str(v.voiceName),
+      tone: TONES.some((t) => t.id === v.tone) ? str(v.tone) : '',
+      speed: Number.isFinite(speed) ? Math.min(SPEED_RANGE.max, Math.max(SPEED_RANGE.min, Math.round(speed * 20) / 20)) : 1,
+    };
   };
+  const ui = obj(input.ui);
 
   const rawKeys: unknown[] = Array.isArray(tts.keys) ? tts.keys : Array.isArray(tts.apiKeys) ? tts.apiKeys : [tts.apiKey];
   const keys: CartesiaKey[] = rawKeys
@@ -119,6 +146,11 @@ export function normalizeSettings(raw: unknown): Settings {
     timeoutSec,
     // An API key pasted into the model field (an easy mistake) would break every request.
     tts: { keys, model: /^sk_/i.test(str(tts.model).trim()) ? '' : str(tts.model), autoPlay: bool(tts.autoPlay, true), voices: { en: voice('en'), bn: voice('bn') } },
+    ui: {
+      theme: ui.theme === 'light' || ui.theme === 'dark' ? ui.theme : 'system',
+      accent: typeof ui.accent === 'string' && ui.accent in ACCENTS ? (ui.accent as AccentId) : DEFAULT_UI.accent,
+      textSize: ui.textSize === 'sm' || ui.textSize === 'lg' ? ui.textSize : 'md',
+    },
   };
 }
 

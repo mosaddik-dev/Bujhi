@@ -15,7 +15,9 @@ import type { PageContext } from '../content/context.ts';
 import { SETTINGS_ERRORS, ERROR_MESSAGES } from '../shared/errors.ts';
 import { detectLang, LANG_NAME, otherLang, type Lang } from '../shared/lang.ts';
 import type { SimpleResult, TranslateResult } from '../shared/messages.ts';
+import { DEFAULT_UI, type UiSettings } from '../shared/settings.ts';
 import css from './card.css';
+import { applyTheme, themeStyleUpdater } from './theme.ts';
 
 /** How the card talks to the extension; the content script and the popup page each provide one. */
 export interface CardBridge {
@@ -30,6 +32,8 @@ export interface CardBridge {
 export interface CardOptions {
   /** Fill the container instead of floating over the page (popup window). */
   embedded?: boolean;
+  /** Static card inside a page (Settings preview). */
+  preview?: boolean;
   onClose?(): void;
 }
 
@@ -75,11 +79,20 @@ export class Card {
   private toastTimer = 0;
   private copied = false;
   private autoReplace = false;
+  private ui: UiSettings = DEFAULT_UI;
+  private updateTheme: ((accent: UiSettings['accent']) => void) | null = null;
 
   constructor(bridge: CardBridge, container: HTMLElement, options: CardOptions = {}) {
     this.bridge = bridge;
     this.container = container;
     this.options = options;
+  }
+
+  setUi(ui: UiSettings): void {
+    this.ui = ui;
+    if (!this.el) return;
+    this.updateTheme?.(ui.accent);
+    applyTheme(this.el.card, ui);
   }
 
   get isOpen(): boolean {
@@ -133,6 +146,7 @@ export class Card {
     this.resizeObserver = null;
     this.host.remove();
     this.host = this.root = this.el = null;
+    this.updateTheme = null;
     this.editable = null;
     this.anchor = null;
     this.options.onClose?.();
@@ -158,8 +172,9 @@ export class Card {
         : 'all: initial !important; position: fixed !important; inset: 0 auto auto 0 !important; width: 0 !important; height: 0 !important; z-index: 2147483647 !important; display: block !important;',
     );
     const root = host.attachShadow({ mode: 'closed' });
-    root.innerHTML = `<style>${css}</style>
-      <div class="card${this.options.embedded ? ' embedded' : ''}" role="dialog" aria-label="Bujhi translation">
+    const variant = this.options.preview ? ' preview' : this.options.embedded ? ' embedded' : '';
+    root.innerHTML = `<style>${css}</style><style data-theme></style>
+      <div class="card${variant}" role="dialog" aria-label="Bujhi translation">
         <div class="head">
           <span class="brand" aria-hidden="true">${markIcon}</span>
           <button class="dir" data-act="swap" title="Switch direction">
@@ -188,6 +203,9 @@ export class Card {
       body: q('.body'),
       foot: q('.foot'),
     };
+    this.updateTheme = themeStyleUpdater(root.querySelector('style[data-theme]')!, '.card');
+    this.updateTheme(this.ui.accent);
+    applyTheme(this.el.card, this.ui);
     this.host = host;
     this.root = root;
     this.container.appendChild(host);

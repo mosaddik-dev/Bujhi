@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system" data-accent="emerald" data-size="md">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -68,6 +68,38 @@
         <div class="voices">
           <div class="panel voice" data-lang="en"></div>
           <div class="panel voice" data-lang="bn"></div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="block-head">
+          <h2>Appearance</h2>
+          <p>How Bujhi looks on every site. Changes apply instantly.</p>
+        </div>
+        <div class="panel appearance">
+          <div class="appearance-controls">
+            <div class="field">
+              <span class="label">Theme</span>
+              <div class="seg" id="theme-mode" role="radiogroup" aria-label="Theme">
+                <button type="button" data-value="system" role="radio">System</button>
+                <button type="button" data-value="light" role="radio">Light</button>
+                <button type="button" data-value="dark" role="radio">Dark</button>
+              </div>
+            </div>
+            <div class="field">
+              <span class="label">Color</span>
+              <div class="swatches" id="accents" role="radiogroup" aria-label="Accent color"></div>
+            </div>
+            <div class="field">
+              <span class="label">Text size</span>
+              <div class="seg" id="text-size" role="radiogroup" aria-label="Text size">
+                <button type="button" data-value="sm" role="radio">Small</button>
+                <button type="button" data-value="md" role="radio">Default</button>
+                <button type="button" data-value="lg" role="radio">Large</button>
+              </div>
+            </div>
+          </div>
+          <div class="preview-stage" id="preview" aria-label="Preview"></div>
         </div>
       </section>
 

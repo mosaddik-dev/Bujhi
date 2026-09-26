@@ -79,6 +79,8 @@ export async function speak(
     text: req.text,
     lang: req.lang,
     voiceId,
+    tone: settings.tts.voices[req.lang].tone,
+    speed: settings.tts.voices[req.lang].speed,
     model: settings.tts.model.trim() || CARTESIA.defaultModel,
     apiKeys,
     replyTo,

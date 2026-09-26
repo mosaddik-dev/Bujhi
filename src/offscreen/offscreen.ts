@@ -39,7 +39,7 @@ function cooldownFor(f: KeyFailure): number {
 async function play(msg: PlayMessage): Promise<PlayResult> {
   stop();
   latestRequest = msg.id;
-  const cacheKey = [msg.model, msg.voiceId, msg.lang, msg.text].join('\u0000');
+  const cacheKey = [msg.model, msg.voiceId, msg.tone, msg.speed, msg.lang, msg.text].join('\u0000');
 
   let failures: KeyFailure[] = [];
   let billed: PlayResult['billed'];
@@ -47,7 +47,7 @@ async function play(msg: PlayMessage): Promise<PlayResult> {
   if (!blob) {
     try {
       const result = await withKeyFallback(msg.apiKeys, (apiKey) =>
-        synthesize({ apiKey, model: msg.model, voiceId: msg.voiceId, lang: msg.lang, text: msg.text }),
+        synthesize({ apiKey, model: msg.model, voiceId: msg.voiceId, tone: msg.tone, speed: msg.speed, lang: msg.lang, text: msg.text }),
       );
       blob = result.value;
       failures = result.failures;

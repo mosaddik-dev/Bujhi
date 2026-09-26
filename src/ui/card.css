@@ -3,20 +3,6 @@
 }
 
 .card {
-  --surface: #ffffff;
-  --surface-2: #f5f8f6;
-  --text: #13201a;
-  --muted: #5e6d66;
-  --faint: #8a9892;
-  --border: rgba(16, 44, 32, 0.1);
-  --accent: #0b8a5c;
-  --accent-hover: #097a51;
-  --accent-ink: #ffffff;
-  --accent-soft: #e6f5ee;
-  --danger: #d0263f;
-  --danger-soft: #fdecee;
-  --focus: rgba(11, 138, 92, 0.35);
-  --shadow: 0 18px 40px -12px rgba(8, 32, 22, 0.28), 0 3px 10px rgba(8, 32, 22, 0.08);
   --mark-cut: var(--surface);
 
   position: fixed;
@@ -32,7 +18,7 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: var(--shadow);
-  font: 400 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Bengali',
+  font: 400 calc(14px * var(--scale, 1))/1.5 Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Bengali',
     'Hind Siliguri', 'Nirmala UI', sans-serif;
   text-align: left;
   text-transform: none;
@@ -44,23 +30,11 @@
   transform-origin: var(--origin, top left);
 }
 
-@media (prefers-color-scheme: dark) {
-  .card {
-    --surface: #161e1a;
-    --surface-2: #1d2722;
-    --text: #e7efeb;
-    --muted: #9aaaa2;
-    --faint: #6f7f78;
-    --border: rgba(255, 255, 255, 0.09);
-    --accent: #35c98d;
-    --accent-hover: #4fd9a0;
-    --accent-ink: #05291a;
-    --accent-soft: rgba(53, 201, 141, 0.13);
-    --danger: #ff6b7d;
-    --danger-soft: rgba(255, 107, 125, 0.12);
-    --focus: rgba(53, 201, 141, 0.4);
-    --shadow: 0 18px 44px -10px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
+.card.preview {
+  position: relative;
+  width: 100%;
+  max-width: 372px;
+  animation: none;
 }
 
 .card.embedded {
@@ -228,7 +202,7 @@ textarea {
   border-radius: 10px;
   color: var(--text);
   font: inherit;
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--scale, 1));
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -280,7 +254,7 @@ kbd {
 
 .out {
   margin: 0;
-  font-size: 15.5px;
+  font-size: calc(15.5px * var(--scale, 1));
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -291,7 +265,7 @@ kbd {
 .out:lang(bn) {
   font-family: 'Noto Sans Bengali', 'Hind Siliguri', 'Nirmala UI', Vrinda, 'Kohinoor Bangla', 'Bangla Sangam MN',
     system-ui, sans-serif;
-  font-size: 16px;
+  font-size: calc(16px * var(--scale, 1));
   line-height: 1.75;
 }
 

@@ -43,15 +43,18 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === chrome.runtime.OnInstalledReason.INSTALL) void chrome.runtime.openOptionsPage();
 });
 
-chrome.action.onClicked.addListener((tab) => void triggerOnTab(tab));
+const run = async (tab: chrome.tabs.Tab, frameId?: number, instant = false) =>
+  triggerOnTab(tab, (await getSettings()).ui, frameId, instant);
+
+chrome.action.onClicked.addListener((tab) => void run(tab));
 
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command === 'translate-replace' && tab) void triggerOnTab(tab, undefined, true);
+  if (command === 'translate-replace' && tab) void run(tab, undefined, true);
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== MENU_ID) return;
-  if (tab) void triggerOnTab(tab, info.frameId);
+  if (tab) void run(tab, info.frameId);
   else void openQuickWindow();
 });
 

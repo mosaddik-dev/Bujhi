@@ -11,10 +11,12 @@ import { PROVIDERS, type ProviderId } from '../providers/catalog.ts';
 import { missingConfig, resolveProvider } from '../providers/index.ts';
 import type { Lang } from '../shared/lang.ts';
 import type { Request, TranslateResult } from '../shared/messages.ts';
-import { cartesiaKeys, TIMEOUT_RANGE, type CartesiaKey, type ProviderSettings, type Settings } from '../shared/settings.ts';
+import { cartesiaKeys, TIMEOUT_RANGE, type CartesiaKey, type ProviderSettings, type Settings, type UiSettings } from '../shared/settings.ts';
 import { loadSettings, saveSettings } from '../shared/storage.ts';
 import { readTtsUsage, recordTtsUsage } from '../shared/usage.ts';
-import { CARTESIA, getCreditUsage, listVoices, synthesize, withKeyFallback, type Voice } from '../tts/cartesia.ts';
+import { CARTESIA, getCreditUsage, listVoices, SPEED_RANGE, synthesize, TONES, withKeyFallback, type Voice } from '../tts/cartesia.ts';
+import { Card } from '../ui/card.ts';
+import { ACCENTS, applyTheme, themeStyleUpdater, type AccentId } from '../ui/theme.ts';
 
 const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -439,6 +441,18 @@ function renderVoices(): void {
           <button class="icon-btn" data-act="preview" title="${playing ? 'Stop' : 'Preview'}" aria-label="Preview voice" ${v.voiceId && hasKey ? '' : 'disabled'}>${playing ? stopIcon : play}</button>
           <button class="icon-btn" data-act="reload" title="Reload voices" aria-label="Reload voices" ${hasKey ? '' : 'disabled'}>${retry}</button>
         </div>
+        <div class="voice-tone">
+          <label class="field">
+            <span class="label">Tone</span>
+            <select data-voice="tone" aria-label="${copy.title} tone">${TONES.map(
+              (t) => `<option value="${t.id}" ${t.id === v.tone ? 'selected' : ''}>${esc(t.label)}</option>`,
+            ).join('')}</select>
+          </label>
+          <label class="field">
+            <div class="label-row"><span class="label">Speed</span><output data-ref="speed">${v.speed.toFixed(2).replace(/0$/, '')}×</output></div>
+            <input type="range" data-voice="speed" min="${SPEED_RANGE.min}" max="${SPEED_RANGE.max}" step="0.05" value="${v.speed}" aria-label="${copy.title} speed">
+          </label>
+        </div>
         ${voicesError && lang === 'en' ? `<p class="result bad">${esc(voicesError)}</p>` : ''}
         ${v.enabled && !v.voiceId && hasKey ? '<p class="hint">No voice picked — Bujhi will use the first available one.</p>' : ''}
       </div>`;
@@ -453,7 +467,11 @@ function bindVoices(): void {
     const input = e.target as HTMLInputElement | HTMLSelectElement;
     const lang = input.closest<HTMLElement>('.voice')!.dataset.lang as Lang;
     const v = settings.tts.voices[lang];
-    if (input.dataset.voice === 'enabled') {
+    if (input.dataset.voice === 'tone') {
+      v.tone = input.value;
+    } else if (input.dataset.voice === 'speed') {
+      v.speed = Number(input.value);
+    } else if (input.dataset.voice === 'enabled') {
       v.enabled = (input as HTMLInputElement).checked;
       // Turning a voice on with nothing picked: pick the first available one.
       const first = voiceLists[lang]?.[0];
@@ -469,6 +487,12 @@ function bindVoices(): void {
     stopPreview();
     renderVoices();
     void flushSave();
+  });
+  // Live speed label while dragging (saved on release via 'change').
+  wrap.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.dataset.voice !== 'speed') return;
+    input.closest('.field')!.querySelector('output')!.textContent = `${Number(input.value).toFixed(2).replace(/0$/, '')}×`;
   });
   wrap.addEventListener('click', (e) => {
     const button = (e.target as Element).closest<HTMLButtonElement>('button[data-act]');
@@ -498,6 +522,8 @@ async function togglePreview(lang: Lang, button: HTMLButtonElement): Promise<voi
         apiKey,
         model: settings.tts.model.trim() || CARTESIA.defaultModel,
         voiceId: settings.tts.voices[lang].voiceId,
+        tone: settings.tts.voices[lang].tone,
+        speed: settings.tts.voices[lang].speed,
         lang,
         text,
       }),
@@ -516,6 +542,71 @@ async function togglePreview(lang: Lang, button: HTMLButtonElement): Promise<voi
     alert(e instanceof Error ? e.message : String(e));
   }
   renderVoices();
+}
+
+// ─── Appearance ──────────────────────────────────────────────────────────────
+
+let previewCard: Card | null = null;
+
+function applyUi(): void {
+  updatePageTheme(settings.ui.accent);
+  applyTheme(document.documentElement, settings.ui);
+  previewCard?.setUi(settings.ui);
+  const mark = (id: string, value: string) =>
+    document.querySelectorAll<HTMLElement>(`#${id} [data-value]`).forEach((b) => b.setAttribute('aria-checked', String(b.dataset.value === value)));
+  mark('theme-mode', settings.ui.theme);
+  mark('text-size', settings.ui.textSize);
+  mark('accents', settings.ui.accent);
+}
+
+function showPreview(): void {
+  const editable = { kind: 'rich' as const, root: document.createElement('div'), range: null };
+  previewCard ??= new Card(
+    {
+      translate: async () => ({
+        ok: true,
+        text: 'আজ সন্ধ্যায় কি তুমি ফ্রি আছো?',
+        from: 'en',
+        to: 'bn',
+        provider: 'Google Gemini',
+        cached: false,
+        voice: true,
+        autoPlay: false,
+        ms: 840,
+      }),
+      speak: async () => ({ ok: false, message: 'Preview — try it on a page' }),
+      stopSpeech: () => {},
+      openSettings: () => $('.block').scrollIntoView({ behavior: 'smooth' }),
+      replace: async () => true,
+    },
+    $('#preview'),
+    // Closing or "replacing" in the preview just shows it again.
+    { embedded: true, preview: true, onClose: () => setTimeout(showPreview, 250) },
+  );
+  previewCard.setUi(settings.ui);
+  previewCard.show({ text: 'Are you free this evening?', anchor: null, editable });
+}
+
+function bindAppearance(): void {
+  $('#accents').innerHTML = (Object.entries(ACCENTS) as Array<[AccentId, (typeof ACCENTS)[AccentId]]>)
+    .map(
+      ([id, a]) =>
+        `<button type="button" class="swatch" role="radio" data-value="${id}" title="${a.label}"><i style="background: linear-gradient(135deg, ${a.light.accent} 50%, ${a.dark.accent} 50%)"></i>${a.label}</button>`,
+    )
+    .join('');
+  const bind = (id: string, key: keyof UiSettings) =>
+    $(`#${id}`).addEventListener('click', (e) => {
+      const button = (e.target as Element).closest<HTMLElement>('[data-value]');
+      if (!button) return;
+      (settings.ui as unknown as Record<string, string>)[key] = button.dataset.value!;
+      applyUi();
+      void flushSave();
+    });
+  bind('theme-mode', 'theme');
+  bind('accents', 'accent');
+  bind('text-size', 'textSize');
+  applyUi();
+  showPreview();
 }
 
 // ─── General ─────────────────────────────────────────────────────────────────
@@ -561,8 +652,13 @@ function bindGeneral(): void {
   });
 }
 
+// Theme CSS goes in before the first paint (default accent until settings load).
+const updatePageTheme = themeStyleUpdater(document.head.appendChild(document.createElement('style')), ':root');
+updatePageTheme('emerald');
+
 async function init(): Promise<void> {
   settings = await loadSettings();
+  bindAppearance();
   renderProviders();
   bindProviders();
   renderKeys();

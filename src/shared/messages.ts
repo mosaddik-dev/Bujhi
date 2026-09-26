@@ -1,6 +1,7 @@
 import type { ProviderId } from '../providers/catalog.ts';
 import type { ErrorCode } from './errors.ts';
 import type { Lang } from './lang.ts';
+import type { UiSettings } from './settings.ts';
 
 /** Page/UI → service worker. */
 export type Request =
@@ -32,7 +33,7 @@ export type PlayResult = SimpleResult & {
 /** Service worker → content script. */
 export type TabMessage =
   /** `instant`: translate the focused text box and replace its text without waiting for a click. */
-  | { type: 'bujhi:run'; instant?: boolean }
+  | { type: 'bujhi:run'; instant?: boolean; ui: UiSettings }
   | { type: 'bujhi:speechEnded'; id: string };
 
 /** Service worker → offscreen document. Carries the Cartesia key, so it only ever goes to extension contexts. */
@@ -44,6 +45,8 @@ export type OffscreenMessage =
       text: string;
       lang: Lang;
       voiceId: string;
+      tone: string;
+      speed: number;
       model: string;
       /** Cartesia keys in the order to try. */
       apiKeys: string[];
