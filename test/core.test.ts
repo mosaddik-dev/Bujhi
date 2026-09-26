@@ -58,7 +58,11 @@ test('normalizeSettings repairs, migrates and keeps order', () => {
   assert.equal(voiceReady(s, 'bn'), true);
   assert.equal(s.tts.autoPlay, true);
   assert.equal(normalizeSettings({ tts: { autoPlay: false } }).tts.autoPlay, false);
+  assert.equal(normalizeSettings({ tts: { model: 'sk_car_pasted_by_mistake' } }).tts.model, '');
+  assert.equal(normalizeSettings({ tts: { model: 'sonic-3.5' } }).tts.model, 'sonic-3.5');
   assert.equal(voiceReady(s, 'en'), false);
+  s.tts.voices.en.enabled = true;
+  assert.equal(voiceReady(s, 'en'), true, 'on + key is enough; a voice is picked on first use');
   assert.deepEqual(normalizeSettings(undefined), defaultSettings());
   assert.deepEqual(normalizeSettings({ tts: { apiKeys: ['a', 'b'] } }).tts.keys.map((k) => k.key), ['a', 'b']);
 });

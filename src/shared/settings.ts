@@ -117,7 +117,8 @@ export function normalizeSettings(raw: unknown): Settings {
   return {
     providers,
     timeoutSec,
-    tts: { keys, model: str(tts.model), autoPlay: bool(tts.autoPlay, true), voices: { en: voice('en'), bn: voice('bn') } },
+    // An API key pasted into the model field (an easy mistake) would break every request.
+    tts: { keys, model: /^sk_/i.test(str(tts.model).trim()) ? '' : str(tts.model), autoPlay: bool(tts.autoPlay, true), voices: { en: voice('en'), bn: voice('bn') } },
   };
 }
 
@@ -125,8 +126,10 @@ export function cartesiaKeys(settings: Settings): string[] {
   return [...new Set(settings.tts.keys.map((k) => k.key.trim()).filter(Boolean))];
 }
 
-/** A voice is usable only when it is switched on, has a voice picked and at least one Cartesia key exists. */
+/**
+ * A voice is usable when it is switched on and at least one Cartesia key exists.
+ * If no specific voice was picked, the first Cartesia voice for that language is used.
+ */
 export function voiceReady(settings: Settings, lang: Lang): boolean {
-  const v = settings.tts.voices[lang];
-  return v.enabled && !!v.voiceId && cartesiaKeys(settings).length > 0;
+  return settings.tts.voices[lang].enabled && cartesiaKeys(settings).length > 0;
 }

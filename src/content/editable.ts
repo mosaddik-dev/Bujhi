@@ -35,10 +35,17 @@ export function deepActiveElement(): Element | null {
 /**
  * Replace the target's text using the browser's own editing pipeline (execCommand fires
  * beforeinput/input), so React, Lexical (WhatsApp) and Draft (Facebook) editors stay in sync and undo works.
+ *
+ * Each strategy is tried only while the field is still untouched: once the editor has changed
+ * anything, we never insert again (a second insert is how text ends up duplicated).
  */
-export function replaceText(target: EditableTarget, text: string): boolean {
-  return target.kind === 'field' ? replaceInField(target, text) : replaceInRich(target, text);
+export function replaceText(target: EditableTarget, text: string): Promise<boolean> {
+  return target.kind === 'field' ? Promise.resolve(replaceInField(target, text)) : replaceInRich(target, text);
 }
+
+/** Compare text the way editors render it: NFC, collapsed whitespace. */
+const norm = (s: string) => s.normalize('NFC').replace(/\s+/g, ' ').trim();
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function replaceInField(target: Extract<EditableTarget, { kind: 'field' }>, text: string): boolean {
   const { el } = target;
@@ -52,39 +59,56 @@ function replaceInField(target: Extract<EditableTarget, { kind: 'field' }>, text
     end = el.selectionEnd ?? start;
   }
   el.setSelectionRange(start, end);
-  const expected = el.value.slice(0, start) + text + el.value.slice(end);
+  const before = el.value;
+  const expected = before.slice(0, start) + text + before.slice(end);
 
-  if (document.execCommand('insertText', false, text) && el.value === expected) return true;
+  document.execCommand('insertText', false, text);
+  if (el.value === expected) return true;
+  // The page reacted (e.g. a controlled input re-rendered): don't insert a second copy.
+  if (el.value !== before) return norm(el.value).includes(norm(text));
 
   el.setRangeText(text, start, end, 'end');
   el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: text }));
   return el.value === expected;
 }
 
-function replaceInRich(target: Extract<EditableTarget, { kind: 'rich' }>, text: string): boolean {
+async function replaceInRich(target: Extract<EditableTarget, { kind: 'rich' }>, text: string): Promise<boolean> {
   const { root } = target;
   if (!root.isConnected) return false;
-  root.focus({ preventScroll: true });
 
-  const selection = window.getSelection();
-  if (!selection) return false;
-  let range = target.range;
-  if (!range || !root.contains(range.commonAncestorContainer)) {
-    range = document.createRange();
-    range.selectNodeContents(root);
-  }
-  selection.removeAllRanges();
-  selection.addRange(range);
+  const select = () => {
+    root.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    if (!selection) return false;
+    let range = target.range;
+    if (!range || !root.contains(range.commonAncestorContainer)) {
+      range = document.createRange();
+      range.selectNodeContents(root);
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  };
+  if (!select()) return false;
 
-  const probe = text.trim().slice(0, 24);
-  const landed = () => root.innerText.includes(probe);
+  const before = norm(root.innerText);
+  const probe = norm(text).slice(0, 24);
+  const landed = () => norm(root.innerText).includes(probe);
+  // Lexical/Draft apply edits asynchronously (sometimes in steps), so give the editor time before judging.
+  const settle = async () => {
+    for (let i = 0; i < 10 && !landed(); i++) await wait(25);
+  };
 
   document.execCommand('insertText', false, text);
+  await settle();
   if (landed()) return true;
+  if (norm(root.innerText) !== before) return false;
 
-  // Some editors ignore execCommand but handle paste.
+  // The editor ignored insertText entirely; some editors only accept paste.
+  if (!select()) return false;
   const data = new DataTransfer();
   data.setData('text/plain', text);
   root.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  await settle();
   return landed();
 }

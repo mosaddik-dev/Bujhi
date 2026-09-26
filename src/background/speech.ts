@@ -2,7 +2,8 @@ import type { Lang } from '../shared/lang.ts';
 import type { OffscreenMessage, PlayResult, ReplyTo, SimpleResult } from '../shared/messages.ts';
 import { cartesiaKeys, voiceReady, type Settings } from '../shared/settings.ts';
 import { readTtsUsage, recordTtsUsage } from '../shared/usage.ts';
-import { CARTESIA } from '../tts/cartesia.ts';
+import { loadSettings, saveSettings } from '../shared/storage.ts';
+import { CARTESIA, listVoices, TtsError, withKeyFallback } from '../tts/cartesia.ts';
 
 const OFFSCREEN_PATH = 'offscreen.html';
 
@@ -40,6 +41,21 @@ async function orderedKeys(settings: Settings): Promise<string[]> {
   return [...keys.filter((k) => !demoted(k)), ...keys.filter(demoted)];
 }
 
+/** Switched on but no voice picked: take the first voice for the language and remember it. */
+async function resolveVoiceId(settings: Settings, lang: Lang, keys: string[]): Promise<string> {
+  const picked = settings.tts.voices[lang].voiceId;
+  if (picked) return picked;
+  const { value: voices } = await withKeyFallback(keys, (key) => listVoices(key, lang));
+  const first = voices[0];
+  if (!first) throw new TtsError('voice', `No ${lang === 'bn' ? 'Bangla' : 'English'} voices found on your Cartesia account.`);
+  const fresh = await loadSettings();
+  if (!fresh.tts.voices[lang].voiceId) {
+    Object.assign(fresh.tts.voices[lang], { voiceId: first.id, voiceName: first.name });
+    await saveSettings(fresh);
+  }
+  return first.id;
+}
+
 export async function speak(
   settings: Settings,
   req: { id: string; text: string; lang: Lang },
@@ -48,6 +64,13 @@ export async function speak(
   if (!voiceReady(settings, req.lang)) {
     return { ok: false, message: 'Voice is off for this language. Turn it on in Settings.' };
   }
+  const apiKeys = await orderedKeys(settings);
+  let voiceId: string;
+  try {
+    voiceId = await resolveVoiceId(settings, req.lang, apiKeys);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
   await ensureOffscreen();
   const message: OffscreenMessage = {
     target: 'offscreen',
@@ -55,9 +78,9 @@ export async function speak(
     id: req.id,
     text: req.text,
     lang: req.lang,
-    voiceId: settings.tts.voices[req.lang].voiceId,
+    voiceId,
     model: settings.tts.model.trim() || CARTESIA.defaultModel,
-    apiKeys: await orderedKeys(settings),
+    apiKeys,
     replyTo,
   };
   const result: PlayResult = await chrome.runtime.sendMessage(message);

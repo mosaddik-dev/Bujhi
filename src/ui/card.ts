@@ -23,8 +23,8 @@ export interface CardBridge {
   speak(id: string, text: string, lang: Lang): Promise<SimpleResult>;
   stopSpeech(): void;
   openSettings(): void;
-  /** Replace text in the page's field; returns false if the editor refused. */
-  replace?(target: EditableTarget, text: string): boolean;
+  /** Replace text in the page's field; resolves false if the editor refused. */
+  replace?(target: EditableTarget, text: string): Promise<boolean>;
 }
 
 export interface CardOptions {
@@ -266,7 +266,7 @@ export class Card {
       case 'speak':
         return this.toggleSpeech();
       case 'replace':
-        return this.replace();
+        return void this.replace();
     }
   }
 
@@ -306,10 +306,11 @@ export class Card {
       this.status = 'done';
       this.result = res;
       this.dir = { from: res.from, to: res.to };
-      if (this.autoReplace) {
+      if (this.autoReplace && this.editable && this.bridge.replace) {
         this.autoReplace = false;
-        // Replaced → done, card goes away (Ctrl+Z restores the original). Refused → fall through and show it.
-        if (this.editable && this.bridge.replace?.(this.editable, res.text)) return this.close();
+        // Replaced → done, card goes away (Ctrl+Z restores the original). Refused → show the card.
+        if (await this.bridge.replace(this.editable, res.text)) return this.close();
+        if (seq !== this.seq || !this.host) return;
       }
       this.render();
       if (res.autoPlay) this.startSpeaking();
@@ -327,13 +328,19 @@ export class Card {
     this.flash(ok ? 'Copied' : "Couldn't copy");
   }
 
-  private replace(): void {
-    if (!this.result || !this.editable || !this.bridge.replace) return;
+  private replacing = false;
+
+  private async replace(): Promise<void> {
+    if (!this.result || !this.editable || !this.bridge.replace || this.replacing) return;
     const text = this.result.text;
-    if (this.bridge.replace(this.editable, text)) {
-      this.close();
-    } else {
-      void writeClipboard(text, this.root!).then((ok) => this.flash(ok ? 'Copied — paste with Ctrl+V' : "Couldn't insert here"));
+    this.replacing = true;
+    try {
+      if (await this.bridge.replace(this.editable, text)) return this.close();
+      if (!this.host) return;
+      const ok = await writeClipboard(text, this.root!);
+      this.flash(ok ? 'Copied — paste with Ctrl+V' : "Couldn't insert here");
+    } finally {
+      this.replacing = false;
     }
   }
 

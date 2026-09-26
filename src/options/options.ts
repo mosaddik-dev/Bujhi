@@ -391,8 +391,19 @@ async function loadVoices(): Promise<void> {
     voiceLists.en = voiceLists.bn = null;
   } finally {
     voicesLoading = false;
-    renderVoices();
   }
+  // A voice switched on without one picked would stay silent: pick the first available one.
+  let picked = false;
+  for (const lang of ['en', 'bn'] as const) {
+    const v = settings.tts.voices[lang];
+    const first = voiceLists[lang]?.[0];
+    if (v.enabled && !v.voiceId && first) {
+      Object.assign(v, { voiceId: first.id, voiceName: first.name });
+      picked = true;
+    }
+  }
+  if (picked) void flushSave();
+  renderVoices();
 }
 
 function renderVoices(): void {
@@ -429,7 +440,7 @@ function renderVoices(): void {
           <button class="icon-btn" data-act="reload" title="Reload voices" aria-label="Reload voices" ${hasKey ? '' : 'disabled'}>${retry}</button>
         </div>
         ${voicesError && lang === 'en' ? `<p class="result bad">${esc(voicesError)}</p>` : ''}
-        ${v.enabled && !v.voiceId && hasKey ? '<p class="hint">Pick a voice to hear results.</p>' : ''}
+        ${v.enabled && !v.voiceId && hasKey ? '<p class="hint">No voice picked — Bujhi will use the first available one.</p>' : ''}
       </div>`;
     const select = $<HTMLSelectElement>('select', box);
     select.value = v.voiceId;
@@ -510,12 +521,17 @@ async function togglePreview(lang: Lang, button: HTMLButtonElement): Promise<voi
 // ─── General ─────────────────────────────────────────────────────────────────
 
 function bindGeneral(): void {
-  const model = $<HTMLInputElement>('#tts-model');
-  model.placeholder = CARTESIA.defaultModel;
-  model.value = settings.tts.model;
-  model.addEventListener('input', () => {
+  const model = $<HTMLSelectElement>('#tts-model');
+  const models: string[] = [...CARTESIA.models];
+  const current = settings.tts.model.trim();
+  if (current && !models.includes(current)) models.push(current);
+  model.innerHTML = models
+    .map((m) => `<option value="${m === CARTESIA.defaultModel ? '' : esc(m)}">${esc(m)}${m === CARTESIA.defaultModel ? ' (recommended)' : ''}</option>`)
+    .join('');
+  model.value = current === CARTESIA.defaultModel ? '' : current;
+  model.addEventListener('change', () => {
     settings.tts.model = model.value;
-    scheduleSave();
+    void flushSave();
   });
 
   const autoPlay = $<HTMLInputElement>('#auto-play');

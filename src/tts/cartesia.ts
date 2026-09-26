@@ -4,6 +4,7 @@ export const CARTESIA = {
   api: 'https://api.cartesia.ai',
   version: '2026-08-14',
   defaultModel: 'sonic-3.6',
+  models: ['sonic-3.6', 'sonic-3.5', 'sonic-3'],
   keyUrl: 'https://play.cartesia.ai/keys',
   timeoutMs: 15_000,
 } as const;
