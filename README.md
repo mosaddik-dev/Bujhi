@@ -73,8 +73,20 @@ Every provider is described once in `providers/catalog.ts`: its label, wire prot
 |---|---|---|
 | Google Gemini | `gemini-3.5-flash-lite` | Best Bangla quality per millisecond; thinking set to minimal |
 | Groq | `openai/gpt-oss-120b` | Very fast inference; `reasoning_effort: low` |
-| OpenRouter | `google/gemini-3.5-flash-lite` | One key for many models |
+| xKiro | `mistralai/mistral-large-2512` | Free Mistral Large through a gateway |
+| Cohere | `command-a-03-2025` | Good writing; trial key has 1,000 calls/month |
+| OpenRouter | `google/gemini-3.5-flash-lite` | One key for many models (free: `nvidia/nemotron-3-super-120b-a12b:free`) |
+| BazaarLink | `qwen/qwen3.7-flash:free` | Free gateway, ~50 requests/day |
+| UnoRouter | `mistral-large-latest:free` | Free gateway, ~1 request/min per model; ids have no vendor prefix |
+| AnyAPI | `nvidia/nemotron-3-ultra-550b-a55b:free` | Free, slower (~5s), host is IPv6-only |
+| Mistral | `mistral-medium-latest` | Activate the free Experiment plan first, or every call is a 429 |
+| Cerebras | `gpt-oss-120b` | Very fast; trial credit expires after 30 days |
+| Cloudflare Workers AI | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Endpoint must include your account id; token needs the Workers AI permission |
+| SEA-LION | `aisingapore/Nemotron-SEA-LION-v4.8-120B-A12B` | 10 requests/min |
+| SiliconFlow | `Qwen/Qwen3-8B` | Small free models, low priority |
 | Custom | whatever you enter | OpenAI, DeepSeek, Ollama, LM Studio… (base URL or full `/chat/completions` URL) |
+
+Gemini, Groq, OpenRouter and Cartesia are in the manifest's `host_permissions`. Every other provider asks for access to its own host the first time you press **Test** (or **Allow access**), so installing Bujhi doesn't ask for a dozen hosts you may never use. A provider without a key is skipped, so the long list costs nothing.
 
 In Settings, leaving the model or endpoint empty means "use the catalog default". Updating a model is then a one-line change in `catalog.ts`, and every user who didn't override it gets the new model.
 

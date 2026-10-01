@@ -108,8 +108,10 @@ export function normalizeSettings(raw: unknown): Settings {
       endpoint: str(p.endpoint),
     });
   }
-  // Providers added in a later version are appended at the end of the user's order.
-  for (const d of base.providers) if (!seen.has(d.id)) providers.push(d);
+  // Providers added in a later version join the end of the user's order, ahead of Custom if it's last.
+  const added = base.providers.filter((d) => !seen.has(d.id));
+  const at = providers.at(-1)?.id === 'custom' ? providers.length - 1 : providers.length;
+  providers.splice(at, 0, ...added);
 
   const timeout = Number(input.timeoutSec);
   const timeoutSec = Number.isFinite(timeout)

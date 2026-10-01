@@ -99,7 +99,7 @@ function providerHtml(p: ProviderSettings, index: number): string {
       </label>
       <label class="field">
         <span class="label">Endpoint</span>
-        <input type="text" data-field="endpoint" value="${esc(p.endpoint)}" placeholder="${esc(info.defaultEndpoint || 'https://api.example.com/v1')}" spellcheck="false" autocomplete="off">
+        <input type="text" data-field="endpoint" value="${esc(p.endpoint)}" placeholder="${esc(info.defaultEndpoint || info.endpointHint || 'https://api.example.com/v1')}" spellcheck="false" autocomplete="off">
       </label>
       <div class="actions wide">
         <button class="btn" data-act="test">Test</button>
@@ -194,6 +194,17 @@ function bindProviders(): void {
 
 async function testProvider(card: HTMLElement, id: ProviderId, button: HTMLButtonElement): Promise<void> {
   const result = $('[data-ref="result"]', card);
+  // Providers outside the manifest's hosts need access granted once; ask now, while the click still counts as a gesture.
+  const origin = !$<HTMLButtonElement>('[data-act="grant"]', card).hidden && originOf(resolveProvider(settings.providers.find((x) => x.id === id)!).endpoint);
+  if (origin) {
+    const granted = await chrome.permissions.request({ origins: [`${origin}/*`] }).catch(() => false);
+    void refreshProvider(id);
+    if (!granted) {
+      result.className = 'result bad';
+      result.textContent = `Bujhi needs access to ${new URL(origin).host} to use this provider.`;
+      return;
+    }
+  }
   button.disabled = true;
   result.className = 'result';
   result.textContent = 'Testing…';

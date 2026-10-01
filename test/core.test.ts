@@ -54,7 +54,13 @@ test('normalizeSettings repairs, migrates and keeps order', () => {
     timeoutSec: 999,
     tts: { apiKey: 'old-single-key', voices: { bn: { enabled: true, voiceId: 'v1' } } },
   });
-  assert.deepEqual(s.providers.map((p) => p.id), ['groq', 'gemini', 'openrouter', 'custom']);
+  assert.deepEqual(s.providers.map((p) => p.id).slice(0, 3), ['groq', 'gemini', 'xkiro']);
+  assert.equal(s.providers.at(-1)!.id, 'custom');
+  assert.equal(s.providers.length, defaultSettings().providers.length);
+  // A v1.2 order keeps Custom last when new providers arrive.
+  const old = normalizeSettings({ providers: ['openrouter', 'gemini', 'groq', 'custom'].map((id) => ({ id })) }).providers.map((p) => p.id);
+  assert.deepEqual(old.slice(0, 4), ['openrouter', 'gemini', 'groq', 'xkiro']);
+  assert.equal(old.at(-1), 'custom');
   assert.equal(s.timeoutSec, 60);
   assert.deepEqual(s.tts.keys, [{ key: 'old-single-key', adminKey: '', monthlyCredits: 0 }]);
   assert.equal(voiceReady(s, 'bn'), true);
