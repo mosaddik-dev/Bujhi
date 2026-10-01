@@ -1,6 +1,6 @@
 import { tuningFor } from './catalog.ts';
 import { postJson, postSse, sendWithFallback } from './http.ts';
-import { examples, maxOutputTokens, systemPrompt } from './prompt.ts';
+import { examples, maxOutputTokens, sourceTurn, systemPrompt } from './prompt.ts';
 import { ProviderError, type Adapter } from './types.ts';
 
 /** Accepts a base URL (".../v1") or the full ".../chat/completions" URL. */
@@ -14,10 +14,10 @@ export const openaiAdapter: Adapter = async (provider, job, signal, onDelta) => 
   const messages = [
     { role: 'system', content: systemPrompt(job.from, job.tone) },
     ...examples(job.from).flatMap(([source, target]) => [
-      { role: 'user', content: source },
+      { role: 'user', content: sourceTurn(source) },
       { role: 'assistant', content: target },
     ]),
-    { role: 'user', content: job.text },
+    { role: 'user', content: sourceTurn(job.text) },
   ];
   const minimal = { model: provider.model, messages };
   const tuning = tuningFor(provider.model);

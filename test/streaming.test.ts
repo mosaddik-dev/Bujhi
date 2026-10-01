@@ -86,6 +86,8 @@ test('cleanPartial hides unfinished reasoning and labels while streaming', () =>
   assert.equal(cleanPartial('<think>let me thi'), '');
   assert.equal(cleanPartial('<think>ok</think>Hello the'), 'Hello the');
   assert.equal(cleanPartial('Translation: Hel'), 'Hel');
+  assert.equal(cleanPartial('<sour'), '');
+  assert.equal(cleanPartial('<source>\nHello</sou'), 'Hello');
 });
 
 test('postSse parses split chunks, ignores keep-alives, stops at [DONE], maps mid-stream errors', async () => {

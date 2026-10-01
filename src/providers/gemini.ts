@@ -1,6 +1,6 @@
 import { tuningFor } from './catalog.ts';
 import { postJson, postSse, sendWithFallback } from './http.ts';
-import { examples, maxOutputTokens, systemPrompt } from './prompt.ts';
+import { examples, maxOutputTokens, sourceTurn, systemPrompt } from './prompt.ts';
 import { ProviderError, type Adapter } from './types.ts';
 
 interface GeminiResponse {
@@ -17,10 +17,10 @@ export const geminiAdapter: Adapter = async (provider, job, signal, onDelta) => 
     systemInstruction: { parts: [{ text: systemPrompt(job.from, job.tone) }] },
     contents: [
       ...examples(job.from).flatMap(([source, target]) => [
-        { role: 'user', parts: [{ text: source }] },
+        { role: 'user', parts: [{ text: sourceTurn(source) }] },
         { role: 'model', parts: [{ text: target }] },
       ]),
-      { role: 'user', parts: [{ text: job.text }] },
+      { role: 'user', parts: [{ text: sourceTurn(job.text) }] },
     ],
   };
   const level = tuningFor(model).geminiThinkingLevel;

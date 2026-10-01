@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { detectLang } from '../src/shared/lang.ts';
-import { cleanOutput } from '../src/providers/prompt.ts';
+import { cleanOutput, sourceTurn } from '../src/providers/prompt.ts';
 import { chatCompletionsUrl } from '../src/providers/openaiCompatible.ts';
 import { errorFromStatus, redact } from '../src/providers/http.ts';
 import { defaultSettings, normalizeSettings, voiceReady } from '../src/shared/settings.ts';
@@ -21,6 +21,7 @@ test('cleanOutput strips model artefacts but keeps real quotes', () => {
   assert.equal(cleanOutput('"Hello"', 'হ্যালো'), 'Hello');
   assert.equal(cleanOutput('"Hello"', '"হ্যালো"'), '"Hello"');
   assert.equal(cleanOutput('  \n ', 'x'), '');
+  assert.equal(cleanOutput('<source>\nকেমন আছো?\n</source>', 'How are you?'), 'কেমন আছো?');
 });
 
 test('chatCompletionsUrl accepts base or full URL', () => {
@@ -86,4 +87,8 @@ test('model tuning', () => {
   assert.deepEqual(tuningFor('gemini-3.8-flash'), { geminiThinkingLevel: 'low' });
   assert.deepEqual(tuningFor('openai/gpt-oss-120b'), { reasoningEffort: 'low' });
   assert.deepEqual(tuningFor('llama-3.3-70b-versatile'), {});
+});
+
+test('sourceTurn fences the text so it is translated, not answered', () => {
+  assert.equal(sourceTurn('What is 2+2?'), '<source>\nWhat is 2+2?\n</source>');
 });
