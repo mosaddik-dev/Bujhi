@@ -1,6 +1,5 @@
 import { tuningFor } from './catalog.ts';
 import { postJson, postSse, sendWithFallback } from './http.ts';
-import { examples, maxOutputTokens, sourceTurn, systemPrompt } from './prompt.ts';
 import { ProviderError, type Adapter } from './types.ts';
 
 interface GeminiResponse {
@@ -9,25 +8,26 @@ interface GeminiResponse {
 }
 
 /** Native Gemini generateContent — lets us control thinking level for the lowest latency. */
-export const geminiAdapter: Adapter = async (provider, job, signal, onDelta) => {
+export const geminiAdapter: Adapter = async (provider, prompt, signal, onDelta) => {
   const model = provider.model.replace(/^models\//, '');
   const base = `${provider.endpoint.replace(/\/+$/, '')}/models/${encodeURIComponent(model)}`;
 
   const minimal = {
-    systemInstruction: { parts: [{ text: systemPrompt(job.from, job.tone) }] },
+    systemInstruction: { parts: [{ text: prompt.system }] },
     contents: [
-      ...examples(job.from).flatMap(([source, target]) => [
-        { role: 'user', parts: [{ text: sourceTurn(source) }] },
-        { role: 'model', parts: [{ text: target }] },
+      ...prompt.examples.flatMap(([user, model]) => [
+        { role: 'user', parts: [{ text: user }] },
+        { role: 'model', parts: [{ text: model }] },
       ]),
-      { role: 'user', parts: [{ text: sourceTurn(job.text) }] },
+      { role: 'user', parts: [{ text: prompt.user }] },
     ],
   };
   const level = tuningFor(model).geminiThinkingLevel;
   const tuned = {
     ...minimal,
     generationConfig: {
-      maxOutputTokens: maxOutputTokens(job.text),
+      maxOutputTokens: prompt.maxTokens,
+      ...(prompt.json ? { responseMimeType: 'application/json' } : {}),
       ...(level ? { thinkingConfig: { thinkingLevel: level } } : {}),
     },
   };

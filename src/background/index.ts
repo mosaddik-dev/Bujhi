@@ -1,8 +1,20 @@
 import { isLang, isReplyTone } from '../shared/lang.ts';
 import { ADAPTERS } from '../providers/index.ts';
-import { TRANSLATE_PORT, type PortMessage, type Request, type ReplyTo, type TranslateRequest, type TranslateResult } from '../shared/messages.ts';
+import {
+  GRAMMAR_PORT,
+  TRANSLATE_PORT,
+  type GrammarConfig,
+  type GrammarPortMessage,
+  type GrammarRequest,
+  type PortMessage,
+  type Request,
+  type ReplyTo,
+  type TranslateRequest,
+  type TranslateResult,
+} from '../shared/messages.ts';
 import { voiceReady, type Settings } from '../shared/settings.ts';
-import { loadSettings, onSettingsChanged, restrictStorageToExtension } from '../shared/storage.ts';
+import { loadSettings, onSettingsChanged, restrictStorageToExtension, saveSettings } from '../shared/storage.ts';
+import { siteDisabled, syncGrammarScript } from './grammar.ts';
 import { relaySpeechEnded, speak, stopSpeech } from './speech.ts';
 import { createTranslator, type TranslateOptions } from './translator.ts';
 import { openQuickWindow, triggerOnTab } from './trigger.ts';
@@ -31,9 +43,21 @@ const translator = createTranslator({
   log: (message) => console.warn('[Bujhi]', message),
 });
 
+// Serialized: registering the same content script twice at once would throw.
+let grammarSync = Promise.resolve();
+const resyncGrammar = () => {
+  grammarSync = grammarSync
+    .then(async () => syncGrammarScript(await getSettings()))
+    .catch((e: unknown) => console.warn('[Bujhi] writing check:', e));
+};
+resyncGrammar();
+chrome.permissions.onAdded.addListener(resyncGrammar);
+chrome.permissions.onRemoved.addListener(resyncGrammar);
+
 onSettingsChanged(() => {
   settingsPromise = null;
   translator.reset();
+  resyncGrammar();
 });
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
@@ -85,14 +109,53 @@ function handle(msg: Request, sender: chrome.runtime.MessageSender): Promise<unk
     case 'speechEnded':
       relaySpeechEnded(msg.id, msg.replyTo);
       return null;
+    case 'grammarConfig':
+      return getSettings().then(
+        (s): GrammarConfig => ({ active: s.grammar.enabled && !siteDisabled(s, String(msg.host)), mode: s.grammar.mode, ui: s.ui }),
+      );
+    case 'grammarDisableSite':
+      return disableSite(String(msg.host));
     default:
       return null;
   }
 }
 
-// One port per translation: stream partial text back; the card disconnecting cancels the request.
+async function disableSite(host: string) {
+  const settings = await loadSettings();
+  const site = host.toLowerCase().replace(/^www\./, '');
+  if (site && !settings.grammar.disabledSites.includes(site)) {
+    settings.grammar.disabledSites.push(site);
+    await saveSettings(settings);
+  }
+  return { ok: true };
+}
+
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== TRANSLATE_PORT || port.sender?.id !== chrome.runtime.id) return port.disconnect();
+  if (port.sender?.id !== chrome.runtime.id) return port.disconnect();
+  if (port.name === TRANSLATE_PORT) return onTranslatePort(port);
+  if (port.name === GRAMMAR_PORT) return onGrammarPort(port);
+  port.disconnect();
+});
+
+// One port per check; the page disconnecting (new keystroke, panel closed) cancels the request.
+function onGrammarPort(port: chrome.runtime.Port) {
+  const controller = new AbortController();
+  let open = true;
+  port.onDisconnect.addListener(() => {
+    open = false;
+    controller.abort();
+  });
+  port.onMessage.addListener(async (msg: GrammarRequest) => {
+    const settings = await getSettings();
+    const result = settings.grammar.enabled
+      ? await translator.check({ text: String(msg.text ?? ''), fresh: !!msg.fresh }, { signal: controller.signal })
+      : ({ ok: false, code: 'cancelled', message: 'The writing check is off.' } as const);
+    if (open) port.postMessage({ type: 'result', result } satisfies GrammarPortMessage);
+  });
+}
+
+// One port per translation: stream partial text back; the card disconnecting cancels the request.
+function onTranslatePort(port: chrome.runtime.Port) {
   const controller = new AbortController();
   let open = true;
   port.onDisconnect.addListener(() => {
@@ -108,7 +171,7 @@ chrome.runtime.onConnect.addListener((port) => {
       onUpdate: (u) => post(u.type === 'delta' ? { type: 'delta', text: u.text } : { type: 'reset' }),
     }).then((result) => post({ type: 'result', result }));
   });
-});
+}
 
 async function translateForUi(msg: TranslateRequest, options: TranslateOptions): Promise<TranslateResult> {
   const outcome = await translator.translate(

@@ -20,13 +20,25 @@ export interface ResolvedProvider {
   headers: Record<string, string>;
 }
 
+/** Everything an adapter sends: a system prompt, example turns, then the user's turn. */
+export interface ChatPrompt {
+  system: string;
+  /** [user, assistant] pairs sent as earlier conversation turns. */
+  examples: ReadonlyArray<readonly [string, string]>;
+  user: string;
+  maxTokens: number;
+  temperature: number;
+  /** Ask for a JSON object (dropped with the other tweaks if the server rejects it). */
+  json?: boolean;
+}
+
 /**
- * An adapter turns a job into raw model text, or throws ProviderError.
+ * An adapter turns a prompt into raw model text, or throws ProviderError.
  * With `onDelta` it streams: each new chunk is passed as it arrives, and the full text is still returned.
  */
 export type Adapter = (
   provider: ResolvedProvider,
-  job: TranslateJob,
+  prompt: ChatPrompt,
   signal: AbortSignal,
   onDelta?: (chunk: string) => void,
 ) => Promise<string>;

@@ -1,4 +1,5 @@
 import type { Lang, ReplyTone } from '../shared/lang.ts';
+import type { ChatPrompt, TranslateJob } from './types.ts';
 
 /**
  * Translation prompt, one per direction, plus two short example pairs that show the model the
@@ -76,6 +77,16 @@ export function sourceTurn(text: string): string {
 
 export function examples(from: Lang): ReadonlyArray<readonly [string, string]> {
   return EXAMPLES[from];
+}
+
+export function translationPrompt(job: TranslateJob): ChatPrompt {
+  return {
+    system: systemPrompt(job.from, job.tone),
+    examples: examples(job.from).map(([source, target]) => [sourceTurn(source), target] as const),
+    user: sourceTurn(job.text),
+    maxTokens: maxOutputTokens(job.text),
+    temperature: 0.3,
+  };
 }
 
 /** Output budget: generous for Bangla (more tokens per word) plus headroom for light reasoning. */

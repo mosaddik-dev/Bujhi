@@ -73,6 +73,35 @@
 
       <section class="block">
         <div class="block-head">
+          <h2>Writing check</h2>
+          <p>Bujhi checks your English in text boxes on any site and explains every suggestion. English only — Bangla text is never checked.</p>
+        </div>
+        <div class="panel">
+          <div class="field toggle-row">
+            <div>
+              <span class="label">Check my English</span>
+              <p class="hint">Needs access to the sites you write on, so Chrome asks once when you switch this on. Passwords, emails, card numbers, codes, search boxes and code editors are never read.</p>
+            </div>
+            <label class="switch" title="Check my English"><input type="checkbox" id="grammar-enabled" aria-label="Check my English"><span></span></label>
+          </div>
+          <p class="result bad" id="grammar-access" hidden></p>
+          <div class="field" data-grammar-option>
+            <span class="label">When to check</span>
+            <div class="seg" id="grammar-mode" role="radiogroup" aria-label="When to check">
+              <button type="button" data-value="live" role="radio">As I type</button>
+              <button type="button" data-value="button" role="radio">When I click the button</button>
+            </div>
+            <p class="hint" id="grammar-mode-hint"></p>
+          </div>
+          <div class="field" data-grammar-option id="grammar-sites-field">
+            <span class="label">Turned off on</span>
+            <div id="grammar-sites" class="sites"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="block-head">
           <h2>Appearance</h2>
           <p>How Bujhi looks on every site. Changes apply instantly.</p>
         </div>

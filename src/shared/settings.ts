@@ -1,6 +1,7 @@
 import { PROVIDER_IDS, PROVIDERS, type ProviderId } from '../providers/catalog.ts';
 import { SPEED_RANGE, TONES } from '../tts/cartesia.ts';
 import { ACCENTS, type AccentId } from '../ui/theme.ts';
+import type { GrammarMode } from './grammar.ts';
 import type { Lang } from './lang.ts';
 
 export interface ProviderSettings {
@@ -50,6 +51,15 @@ export interface TtsSettings {
   voices: Record<Lang, VoiceSettings>;
 }
 
+export interface GrammarSettings {
+  /** Check English in text boxes on every site (needs access to all sites, asked for when switched on). */
+  enabled: boolean;
+  /** 'live': check after each pause in typing. 'button': only when you click the Bujhi button. */
+  mode: GrammarMode;
+  /** Hostnames where the writing check stays off. */
+  disabledSites: string[];
+}
+
 export interface Settings {
   /** Array order is the fallback order. */
   providers: ProviderSettings[];
@@ -58,6 +68,7 @@ export interface Settings {
   streaming: boolean;
   tts: TtsSettings;
   ui: UiSettings;
+  grammar: GrammarSettings;
 }
 
 export const DEFAULT_UI: UiSettings = { theme: 'system', accent: 'emerald', textSize: 'md' };
@@ -79,6 +90,7 @@ export function defaultSettings(): Settings {
       },
     },
     ui: { ...DEFAULT_UI },
+    grammar: { enabled: false, mode: 'live', disabledSites: [] },
   };
 }
 
@@ -132,6 +144,7 @@ export function normalizeSettings(raw: unknown): Settings {
     };
   };
   const ui = obj(input.ui);
+  const grammar = obj(input.grammar);
 
   const rawKeys: unknown[] = Array.isArray(tts.keys) ? tts.keys : Array.isArray(tts.apiKeys) ? tts.apiKeys : [tts.apiKey];
   const keys: CartesiaKey[] = rawKeys
@@ -156,6 +169,11 @@ export function normalizeSettings(raw: unknown): Settings {
       theme: ui.theme === 'light' || ui.theme === 'dark' ? ui.theme : 'system',
       accent: typeof ui.accent === 'string' && ui.accent in ACCENTS ? (ui.accent as AccentId) : DEFAULT_UI.accent,
       textSize: ui.textSize === 'sm' || ui.textSize === 'lg' ? ui.textSize : 'md',
+    },
+    grammar: {
+      enabled: bool(grammar.enabled, false),
+      mode: grammar.mode === 'button' ? 'button' : 'live',
+      disabledSites: [...new Set((Array.isArray(grammar.disabledSites) ? grammar.disabledSites : []).map((h) => str(h).trim().toLowerCase()).filter(Boolean))],
     },
   };
 }

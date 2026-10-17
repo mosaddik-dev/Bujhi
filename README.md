@@ -9,12 +9,30 @@ Bujhi (বুঝি, "I understand") is a Manifest V3 Chrome extension that tran
 | Typing in a box, then **Alt+Shift+B** | Translates the box and replaces the text instantly, no click (Ctrl+Z undoes it) |
 | **Alt+B** with nothing selected | Opens a small type-to-translate box |
 | Right-click, then **Translate with Bujhi** | Same as Alt+B |
+| Write English in a text box (with **Writing check** on) | A badge in the box's corner counts mistakes; click it for fixes and explanations |
 
 When you're writing a reply, the card also shows **Auto · Casual · Polite · Professional**. Pick one to re-translate in that tone. For Bangla output this sets তুমি or আপনি; for English it changes the phrasing. Each tone's result is cached separately.
 
 Translations **stream** word by word as the model writes them. You can switch this off in Settings → Advanced to show each translation all at once.
 
 The direction is detected automatically. Click the `English → বাংলা` label on the card to flip it, which also covers romanized Bangla ("ami ashchi").
+
+## Writing check (English only)
+
+Turn on **Settings → Writing check** to have Bujhi review the English you write in text boxes on any site, like Grammarly but with your own AI providers.
+
+- **As I type** (default): a moment after you stop typing (1s), the text is checked. The badge in the corner of the box shows the number of suggestions, or ✓.
+- **When I click the button**: nothing is sent until you click the badge.
+- Click the badge to open the panel. Each suggestion shows the change (~~buyed~~ → **bought**), its type (grammar, spelling, punctuation, word choice, style, clarity), a plain-English explanation, and sometimes alternative wordings.
+  - **Accept** or pick an alternative to fix it in place. **Fix all** applies every suggestion. Each fix is a normal edit, so Ctrl+Z undoes it, and rich editors keep their formatting.
+  - Click the change to highlight those words in your text. **Dismiss** hides a suggestion.
+  - **Turn off on <site>** adds the site to a list in Settings, where you can remove it again.
+- **English only.** Bangla-script text is never sent. If the model sees romanized Bangla ("ami bhalo achi") or another language, the badge stays grey and nothing is flagged.
+- **Never read:** password, email, number, phone, URL and search inputs; text inputs that look like usernames, emails, one-time codes, card numbers or similar (by `autocomplete`, `inputmode`, `name` or `id`); any text input in a form with a password field; code editors (CodeMirror, Monaco, Ace); and anything marked `data-gramm="false"` or `data-bujhi="off"`.
+
+Checks use the same provider order, timeouts and cooldowns as translations. Each check is one JSON request (`responseMimeType` / `response_format: json_object`, dropped automatically if a server rejects it). The model returns only the issues; Bujhi works out each issue's position itself and throws away any it can't find in your text, so a fix never lands in the wrong place. The last 100 checks are cached, so going back to a box you already checked costs nothing.
+
+Switching the check on asks Chrome for access to all sites (`optional_host_permissions`). Bujhi then registers `grammar.js` (~28 KB) as a content script and injects it into tabs that are already open. Switching it off unregisters the script.
 
 ## Build and load
 
@@ -43,12 +61,17 @@ src/
   background/   service worker
     index.ts        event wiring: icon, shortcuts, context menu, messages
     trigger.ts      injects content script on demand, picks the frame, quick-window fallback
-    translator.ts   cache → de-dupe → provider fallback chain (pure, unit-tested)
+    translator.ts   cache → de-dupe → provider fallback chain for translations and writing checks (pure, unit-tested)
     speech.ts       offscreen audio doc, Cartesia key ordering & cooldowns
   content/      injected into the page only when you trigger Bujhi
     index.ts        message listener, owns the card
     context.ts      what the user is pointing at (selection / text field / editor)
     editable.ts     writes text back into inputs, textareas and rich editors
+    richText.ts     rich-editor text ⇄ DOM ranges, so fixes apply in place
+  grammar/      writing check: content script on all sites, only while switched on
+    index.ts        which fields qualify, when to check, applying fixes
+    ui.ts,css       corner badge + suggestions panel (Shadow DOM)
+  background/grammar.ts  registers/unregisters the writing-check script
   ui/card.ts,css  the floating card (Shadow DOM), also reused by the popup
   providers/    translation provider layer
     catalog.ts      ALL endpoints + default models + per-model tuning (one place to update)
@@ -189,7 +212,8 @@ Only the active colour's CSS (~1 KB) is generated on a page, and it's rebuilt on
 
 ## Performance: idle cost ≈ zero
 
-- **No content scripts on page load.** Bujhi injects its script (~24 KB) only into the tab where you trigger it (`activeTab` + `scripting`). Sites where you never press the shortcut are never touched.
+- **No content scripts on page load** while the writing check is off (the default). Bujhi injects its script (~24 KB) only into the tab where you trigger it (`activeTab` + `scripting`). Sites where you never press the shortcut are never touched.
+- **With the writing check on**, each page gets `grammar.js`, which adds one `focusin` listener. The badge, its listeners and observers exist only while a qualifying text box has focus.
 - **The card exists only while it's open.** Closing it removes its DOM, event listeners and ResizeObserver. What stays in the tab is a single message listener.
 - **The service worker is purely event-driven.** It has no timers, polling or alarms, so Chrome suspends it when idle.
 - **The offscreen audio document** exists only while speaking.
@@ -200,7 +224,7 @@ Only the active colour's CSS (~1 KB) is generated on a page, and it's rebuilt on
 
 - **Permissions**: `activeTab`, `scripting`, `storage`, `contextMenus`, `offscreen`, plus host access to the three default AI providers and Cartesia.
   - Access to custom endpoints is optional and requested per host.
-  - There is no `<all_urls>` host access and no always-on page access.
+  - All-site access is optional and requested only when you switch on the writing check. Without it there is no always-on page access.
 - **Replace** goes through the browser's own editing pipeline (`execCommand('insertText')`). React, Lexical (WhatsApp) and Draft (Facebook) editors therefore stay in sync, and undo works.
   - If an editor refuses, Bujhi falls back to a synthetic paste, then to copying the text to your clipboard.
 - **After an extension update**, tabs that were already open show "Bujhi was updated — reload this page" instead of failing silently.
@@ -210,7 +234,7 @@ Only the active colour's CSS (~1 KB) is generated on a page, and it's rebuilt on
 
 ## Tests
 
-- `npm test` runs the unit tests: language detection, output cleanup, HTTP error classification, settings migration, fallback order, cache and de-dupe, cooldowns, and Cartesia key fallback.
+- `npm test` runs the unit tests: language detection, output cleanup, HTTP error classification, settings migration, fallback order, cache and de-dupe, cooldowns, Cartesia key fallback, and the writing check (JSON parsing, issue positions, sensitive-field filter, English-only gate).
 - The end-to-end flows were checked in real Chromium with the built extension:
   - selection card, Copy, Escape and outside-click to close
   - Replace in textarea and contenteditable

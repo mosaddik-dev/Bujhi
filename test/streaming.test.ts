@@ -6,14 +6,16 @@ import { cleanPartial, systemPrompt } from '../src/providers/prompt.ts';
 import { ProviderError, type Adapter } from '../src/providers/types.ts';
 import { defaultSettings } from '../src/shared/settings.ts';
 
+const toneOf = (system: string) => system.match(/Style override: make it (\w+)/)?.[1];
+
 function setup(streaming: boolean, behaviour: Record<string, Adapter>) {
   const s = defaultSettings();
   s.streaming = streaming;
   for (const p of s.providers) if (p.id in behaviour) p.apiKey = 'k';
   const calls: Array<{ id: string; tone?: string; streamed: boolean }> = [];
-  const adapter: Adapter = (p, job, signal, onDelta) => {
-    calls.push({ id: p.id, tone: job.tone, streamed: !!onDelta });
-    return behaviour[p.id](p, job, signal, onDelta);
+  const adapter: Adapter = (p, prompt, signal, onDelta) => {
+    calls.push({ id: p.id, tone: toneOf(prompt.system), streamed: !!onDelta });
+    return behaviour[p.id](p, prompt, signal, onDelta);
   };
   return { translator: createTranslator({ getSettings: async () => s, adapters: { gemini: adapter, openai: adapter }, hasPermission: async () => true }), calls };
 }
@@ -68,7 +70,7 @@ test('cancelling stops the request and does not fall back or cache', async () =>
 });
 
 test('reply tone reaches the adapter and is cached separately', async () => {
-  const { translator, calls } = setup(false, { gemini: async (_p, job) => `[${job.tone ?? 'auto'}]` });
+  const { translator, calls } = setup(false, { gemini: async (_p, prompt) => `[${toneOf(prompt.system) ?? 'auto'}]` });
   const casual = await translator.translate({ text: 'কাল দেখা হবে', tone: 'casual' });
   const pro = await translator.translate({ text: 'কাল দেখা হবে', tone: 'professional' });
   const again = await translator.translate({ text: 'কাল দেখা হবে', tone: 'casual' });

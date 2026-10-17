@@ -30,6 +30,8 @@ const builds = [
     // The value of the last statement is what chrome.scripting.executeScript reports per frame.
     footer: { js: 'globalThis.__bujhi && globalThis.__bujhi.probe();' },
   },
+  // Writing check: registered on all sites only while switched on (see background/grammar.ts).
+  { entryPoints: { grammar: 'src/grammar/index.ts' } },
   { entryPoints: { options: 'src/options/options.ts' } },
   { entryPoints: { popup: 'src/popup/popup.ts' } },
   { entryPoints: { offscreen: 'src/offscreen/offscreen.ts' } },

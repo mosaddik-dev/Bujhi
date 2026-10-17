@@ -1,4 +1,5 @@
 import chevronDown from '../../assets/icons/ui/chevron-down.svg';
+import closeIcon from '../../assets/icons/ui/close.svg';
 import chevronUp from '../../assets/icons/ui/chevron-up.svg';
 import eyeOff from '../../assets/icons/ui/eye-off.svg';
 import eye from '../../assets/icons/ui/eye.svg';
@@ -7,6 +8,7 @@ import plus from '../../assets/icons/ui/plus.svg';
 import retry from '../../assets/icons/ui/retry.svg';
 import stopIcon from '../../assets/icons/ui/stop.svg';
 import trash from '../../assets/icons/ui/trash.svg';
+import { GRAMMAR_ORIGINS } from '../background/grammar.ts';
 import { PROVIDERS, type ProviderId } from '../providers/catalog.ts';
 import { missingConfig, resolveProvider } from '../providers/index.ts';
 import type { Lang } from '../shared/lang.ts';
@@ -555,6 +557,72 @@ async function togglePreview(lang: Lang, button: HTMLButtonElement): Promise<voi
   renderVoices();
 }
 
+// ─── Writing check ──────────────────────────────────────────────────────────
+
+const MODE_HINT = {
+  live: 'Checks a moment after you stop typing. The badge in the corner of the box shows how many suggestions there are.',
+  button: 'Nothing is sent until you click the Bujhi badge in the corner of the text box.',
+};
+
+async function renderGrammar(): Promise<void> {
+  const g = settings.grammar;
+  const granted = await chrome.permissions.contains({ origins: GRAMMAR_ORIGINS });
+  const on = g.enabled && granted;
+  $<HTMLInputElement>('#grammar-enabled').checked = on;
+  const access = $('#grammar-access');
+  access.hidden = !(g.enabled && !granted);
+  access.textContent = 'Bujhi no longer has access to sites, so the writing check is paused. Switch it on to allow access again.';
+  for (const el of document.querySelectorAll('[data-grammar-option]')) el.setAttribute('aria-disabled', String(!on));
+  document.querySelectorAll<HTMLElement>('#grammar-mode [data-value]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.value === g.mode)));
+  $('#grammar-mode-hint').textContent = MODE_HINT[g.mode];
+  $('#grammar-sites-field').hidden = !g.disabledSites.length;
+  $('#grammar-sites').innerHTML = g.disabledSites
+    .map((site) => `<span class="site-chip">${esc(site)}<button class="icon-btn" data-site="${esc(site)}" title="Turn the check back on here" aria-label="Turn back on for ${esc(site)}">${closeIcon}</button></span>`)
+    .join('');
+}
+
+function bindGrammar(): void {
+  const toggle = $<HTMLInputElement>('#grammar-enabled');
+  toggle.addEventListener('change', async () => {
+    if (toggle.checked) {
+      // Must be the first await: Chrome only shows the prompt during the click.
+      const granted = await chrome.permissions.request({ origins: GRAMMAR_ORIGINS }).catch(() => false);
+      if (!granted) {
+        toggle.checked = false;
+        const access = $('#grammar-access');
+        access.hidden = false;
+        access.textContent = 'Without access to sites, Bujhi can’t see what you type, so the writing check stays off.';
+        return;
+      }
+    }
+    settings.grammar.enabled = toggle.checked;
+    await flushSave();
+    void renderGrammar();
+  });
+  $('#grammar-mode').addEventListener('click', (e) => {
+    const button = (e.target as Element).closest<HTMLElement>('[data-value]');
+    if (!button) return;
+    settings.grammar.mode = button.dataset.value === 'button' ? 'button' : 'live';
+    void flushSave();
+    void renderGrammar();
+  });
+  $('#grammar-sites').addEventListener('click', (e) => {
+    const site = (e.target as Element).closest<HTMLElement>('[data-site]')?.dataset.site;
+    if (!site) return;
+    settings.grammar.disabledSites = settings.grammar.disabledSites.filter((s) => s !== site);
+    void flushSave();
+    void renderGrammar();
+  });
+  // Sites turned off from a page's panel while Settings is open.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    const next = area === 'local' ? (changes.settings?.newValue as Settings | undefined) : undefined;
+    if (!next?.grammar) return;
+    settings.grammar.disabledSites = [...next.grammar.disabledSites];
+    void renderGrammar();
+  });
+  void renderGrammar();
+}
+
 // ─── Appearance ──────────────────────────────────────────────────────────────
 
 let previewCard: Card | null = null;
@@ -683,6 +751,7 @@ async function init(): Promise<void> {
   bindKeys();
   bindVoices();
   bindGeneral();
+  bindGrammar();
   renderVoices();
   void loadVoices();
   void refreshUsage();

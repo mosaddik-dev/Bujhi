@@ -1,8 +1,10 @@
 import { activeProviders, missingConfig, resolveProvider } from '../providers/index.ts';
 import type { ProviderId, ProviderKind } from '../providers/catalog.ts';
-import { cleanOutput, cleanPartial } from '../providers/prompt.ts';
-import { ProviderError, toProviderError, type Adapter, type ResolvedProvider } from '../providers/types.ts';
+import { grammarPrompt, parseGrammar } from '../providers/grammarPrompt.ts';
+import { cleanOutput, cleanPartial, translationPrompt } from '../providers/prompt.ts';
+import { ProviderError, toProviderError, type Adapter, type ChatPrompt, type ResolvedProvider } from '../providers/types.ts';
 import { ERROR_MESSAGES, KIND_LABEL, MAX_CHARS, type ErrorCode } from '../shared/errors.ts';
+import { MAX_GRAMMAR_CHARS, type GrammarCheck, type GrammarResult } from '../shared/grammar.ts';
 import { detectLang, otherLang, type Lang, type ReplyTone } from '../shared/lang.ts';
 import type { Settings } from '../shared/settings.ts';
 
@@ -39,6 +41,7 @@ export interface TranslatorDeps {
 }
 
 const CACHE_SIZE = 200;
+const CHECK_CACHE_SIZE = 100;
 const DEFAULT_COOLDOWN_MS = 30_000;
 /** A rejected key or missing model won't fix itself; skip to the next provider until Settings change. */
 const CONFIG_COOLDOWN_MS = 5 * 60_000;
@@ -48,16 +51,22 @@ interface Failure {
   error: ProviderError;
 }
 
-const fail = (code: ErrorCode, details?: string): Outcome => ({ ok: false, code, message: ERROR_MESSAGES[code], details });
+type Failed = Extract<Outcome, { ok: false }>;
+type Chained<T> = { ok: true; value: T; provider: string; ms: number } | Failed;
+
+const fail = (code: ErrorCode, details?: string): Failed => ({ ok: false, code, message: ERROR_MESSAGES[code], details });
 
 /**
- * Translation orchestrator: cache → de-duplicate in-flight requests → try providers in order,
- * falling through on any failure (timeout, rate limit, bad key, bad response…).
+ * AI orchestrator for translations and English writing checks: cache → de-duplicate in-flight
+ * requests → try providers in order, falling through on any failure (timeout, rate limit, bad key,
+ * bad response…). Both share one set of cooldowns, since they share the same provider limits.
  */
 export function createTranslator(deps: TranslatorDeps) {
   const now = deps.now ?? Date.now;
   const cache = new Map<string, { text: string; provider: string }>();
   const inflight = new Map<string, Promise<Outcome>>();
+  const checks = new Map<string, { check: GrammarCheck; provider: string }>();
+  const checking = new Map<string, Promise<GrammarResult>>();
   /** Providers that just rate-limited us are tried last until their cooldown passes. */
   const coolingUntil = new Map<ProviderId, number>();
 
@@ -67,9 +76,10 @@ export function createTranslator(deps: TranslatorDeps) {
     if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
   }
 
-  async function attempt(
+  async function attempt<T>(
     provider: ResolvedProvider,
-    job: { text: string; from: Lang; to: Lang; tone?: ReplyTone },
+    prompt: ChatPrompt,
+    parse: (raw: string) => T,
     timeoutSec: number,
     outer?: AbortSignal,
     onChunk?: (chunk: string) => void,
@@ -90,22 +100,15 @@ export function createTranslator(deps: TranslatorDeps) {
         }
       : undefined;
     try {
-      const raw = await deps.adapters[provider.kind](provider, job, controller.signal, chunk);
-      const out = cleanOutput(raw, job.text);
-      if (!out) throw new ProviderError('bad_response', 'Empty translation');
-      return out;
+      return parse(await deps.adapters[provider.kind](provider, prompt, controller.signal, chunk));
     } finally {
       clearTimeout(timer);
       outer?.removeEventListener('abort', abort);
     }
   }
 
-  async function run(
-    key: string,
-    job: { text: string; from: Lang; to: Lang; tone?: ReplyTone },
-    options: TranslateOptions,
-  ): Promise<Outcome> {
-    const { from, to } = job;
+  /** Try each provider in order until one answers with something `parse` accepts. */
+  async function chain<T>(prompt: ChatPrompt, parse: (raw: string) => T, options: TranslateOptions): Promise<Chained<T>> {
     const settings = await deps.getSettings();
     const providers = activeProviders(settings);
     if (!providers.length) return fail('no_provider');
@@ -129,10 +132,9 @@ export function createTranslator(deps: TranslatorDeps) {
           }
         : undefined;
       try {
-        const out = await attempt(provider, job, settings.timeoutSec, signal, onChunk);
+        const value = await attempt(provider, prompt, parse, settings.timeoutSec, signal, onChunk);
         coolingUntil.delete(provider.id);
-        remember(key, { text: out, provider: provider.label });
-        return { ok: true, text: out, from, to, provider: provider.label, cached: false, ms: now() - started };
+        return { ok: true, value, provider: provider.label, ms: now() - started };
       } catch (e) {
         if (signal?.aborted) return fail('cancelled');
         if (partial && stream) stream({ type: 'reset' });
@@ -169,10 +171,48 @@ export function createTranslator(deps: TranslatorDeps) {
       if (pending) return pending;
     }
 
-    const promise = run(key, { text, from, to, tone }, options).finally(() => {
+    const parse = (raw: string) => {
+      const out = cleanOutput(raw, text);
+      if (!out) throw new ProviderError('bad_response', 'Empty translation');
+      return out;
+    };
+    const run = async (): Promise<Outcome> => {
+      const res = await chain(translationPrompt({ text, from, to, tone }), parse, options);
+      if (!res.ok) return res;
+      remember(key, { text: res.value, provider: res.provider });
+      return { ok: true, text: res.value, from, to, provider: res.provider, cached: false, ms: res.ms };
+    };
+    const promise = run().finally(() => {
       if (inflight.get(key) === promise) inflight.delete(key);
     });
     inflight.set(key, promise);
+    return promise;
+  }
+
+  /** English writing check. Not streamed: the result is one JSON object. */
+  async function check(input: { text: string; fresh?: boolean }, options: Pick<TranslateOptions, 'signal'> = {}): Promise<GrammarResult> {
+    const text = input.text;
+    if (!text.trim()) return fail('empty');
+    if (text.length > MAX_GRAMMAR_CHARS) return { ok: false, code: 'too_long', message: `Bujhi checks up to ${MAX_GRAMMAR_CHARS.toLocaleString('en')} characters at a time.` };
+
+    if (!input.fresh) {
+      const hit = checks.get(text);
+      if (hit) return { ok: true, ...hit.check, provider: hit.provider, cached: true, ms: 0 };
+      const pending = checking.get(text);
+      if (pending) return pending;
+    }
+    const run = async (): Promise<GrammarResult> => {
+      const res = await chain(grammarPrompt(text), (raw) => parseGrammar(raw, text), options);
+      if (!res.ok) return res;
+      checks.delete(text);
+      checks.set(text, { check: res.value, provider: res.provider });
+      if (checks.size > CHECK_CACHE_SIZE) checks.delete(checks.keys().next().value!);
+      return { ok: true, ...res.value, provider: res.provider, cached: false, ms: res.ms };
+    };
+    const promise = run().finally(() => {
+      if (checking.get(text) === promise) checking.delete(text);
+    });
+    checking.set(text, promise);
     return promise;
   }
 
@@ -188,7 +228,7 @@ export function createTranslator(deps: TranslatorDeps) {
     const text = 'Hey! Are you free this evening?';
     const started = now();
     try {
-      const out = await attempt(provider, { text, from: 'en', to: 'bn' }, settings.timeoutSec);
+      const out = await attempt(provider, translationPrompt({ text, from: 'en', to: 'bn' }), (raw) => cleanOutput(raw, text), settings.timeoutSec);
       return { ok: true, text: out, from: 'en', to: 'bn', provider: provider.label, cached: false, ms: now() - started };
     } catch (e) {
       const error = toProviderError(e);
@@ -201,10 +241,10 @@ export function createTranslator(deps: TranslatorDeps) {
     coolingUntil.clear();
   }
 
-  return { translate, testProvider, reset };
+  return { translate, check, testProvider, reset };
 }
 
-function summarize(failures: Failure[]): Outcome {
+function summarize(failures: Failure[]): Failed {
   const kinds = new Set(failures.map((f) => f.error.kind));
   const details = failures.map((f) => `${f.provider.label}: ${KIND_LABEL[f.error.kind]}`).join(' · ');
   if (kinds.size === 1) {

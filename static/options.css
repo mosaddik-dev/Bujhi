@@ -682,6 +682,46 @@ details[open] summary::before {
   margin-top: 16px;
 }
 
+/* Writing check */
+
+.panel > .result + .field,
+.panel > .toggle-row + .result {
+  margin-top: 16px;
+}
+
+[data-grammar-option][aria-disabled='true'] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.site-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.site-chip .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.site-chip .icon-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
 /* Appearance */
 
 .appearance {

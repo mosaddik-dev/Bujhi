@@ -1,5 +1,6 @@
 import type { ProviderId } from '../providers/catalog.ts';
 import type { ErrorCode } from './errors.ts';
+import type { GrammarMode, GrammarResult } from './grammar.ts';
 import type { Lang, ReplyTone } from './lang.ts';
 import type { UiSettings } from './settings.ts';
 
@@ -8,6 +9,22 @@ import type { UiSettings } from './settings.ts';
  * back and the card can cancel by disconnecting. Everything else is a one-shot message.
  */
 export const TRANSLATE_PORT = 'bujhi-translate';
+/** Same idea for English writing checks: one port per check, disconnect to cancel. */
+export const GRAMMAR_PORT = 'bujhi-grammar';
+
+export interface GrammarRequest {
+  text: string;
+  /** Skip the cache (Check again). */
+  fresh?: boolean;
+}
+
+/** What the writing-check script on a page needs to know; it can't read settings itself. */
+export interface GrammarConfig {
+  /** False when switched off in Settings, or off for this site. */
+  active: boolean;
+  mode: GrammarMode;
+  ui: UiSettings;
+}
 
 export interface TranslateRequest {
   text: string;
@@ -20,13 +37,17 @@ export interface TranslateRequest {
 /** Service worker → card over the translate port. */
 export type PortMessage = { type: 'delta'; text: string } | { type: 'reset' } | { type: 'result'; result: TranslateResult };
 
+export type GrammarPortMessage = { type: 'result'; result: GrammarResult };
+
 /** Page/UI → service worker. */
 export type Request =
   | { type: 'speak'; id: string; text: string; lang: Lang }
   | { type: 'stopSpeech' }
   | { type: 'openSettings' }
   | { type: 'testProvider'; id: ProviderId }
-  | { type: 'speechEnded'; id: string; replyTo: ReplyTo | null };
+  | { type: 'speechEnded'; id: string; replyTo: ReplyTo | null }
+  | { type: 'grammarConfig'; host: string }
+  | { type: 'grammarDisableSite'; host: string };
 
 export interface ReplyTo {
   tabId: number;

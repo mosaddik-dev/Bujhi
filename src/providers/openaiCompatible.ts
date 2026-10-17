@@ -1,6 +1,5 @@
 import { tuningFor } from './catalog.ts';
 import { postJson, postSse, sendWithFallback } from './http.ts';
-import { examples, maxOutputTokens, sourceTurn, systemPrompt } from './prompt.ts';
 import { ProviderError, type Adapter } from './types.ts';
 
 /** Accepts a base URL (".../v1") or the full ".../chat/completions" URL. */
@@ -10,21 +9,22 @@ export function chatCompletionsUrl(endpoint: string): string {
 }
 
 /** OpenAI Chat Completions — used by Groq, OpenRouter and any custom compatible server. */
-export const openaiAdapter: Adapter = async (provider, job, signal, onDelta) => {
+export const openaiAdapter: Adapter = async (provider, prompt, signal, onDelta) => {
   const messages = [
-    { role: 'system', content: systemPrompt(job.from, job.tone) },
-    ...examples(job.from).flatMap(([source, target]) => [
-      { role: 'user', content: sourceTurn(source) },
-      { role: 'assistant', content: target },
+    { role: 'system', content: prompt.system },
+    ...prompt.examples.flatMap(([user, assistant]) => [
+      { role: 'user', content: user },
+      { role: 'assistant', content: assistant },
     ]),
-    { role: 'user', content: sourceTurn(job.text) },
+    { role: 'user', content: prompt.user },
   ];
   const minimal = { model: provider.model, messages };
   const tuning = tuningFor(provider.model);
   const tuned = {
     ...minimal,
-    temperature: 0.3,
-    max_tokens: maxOutputTokens(job.text),
+    temperature: prompt.temperature,
+    max_tokens: prompt.maxTokens,
+    ...(prompt.json ? { response_format: { type: 'json_object' } } : {}),
     ...(tuning.reasoningEffort ? { reasoning_effort: tuning.reasoningEffort } : {}),
   };
 
