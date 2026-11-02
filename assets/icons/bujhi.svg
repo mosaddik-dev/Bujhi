@@ -1,19 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <!-- Bujhi (বুঝি, "I understand"): two chat bubbles talking back and forth, in Bangladesh-flag green and red. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Bujhi">
+  <!-- Bujhi (বুঝি): a card-stock speech bubble that translates, English <-> Bangla. -->
   <defs>
-    <linearGradient id="bg" x1="16" y1="8" x2="112" y2="124" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#16B97C"/>
-      <stop offset="1" stop-color="#065F40"/>
-    </linearGradient>
-    <linearGradient id="red" x1="60" y1="20" x2="108" y2="72" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FF6272"/>
-      <stop offset="1" stop-color="#E11D48"/>
-    </linearGradient>
+    <clipPath id="sq"><rect x="6" y="6" width="116" height="116" rx="30"/></clipPath>
   </defs>
-  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#bg)"/>
-  <!-- back bubble (reply), tail on the right -->
-  <path d="M66 22h26c9.94 0 18 8.06 18 18v12c0 7.6-4.7 14.1-11.4 16.7l2.9 9.1c.6 1.9-1.5 3.4-3.1 2.3L83.3 70H66c-9.94 0-18-8.06-18-18V40c0-9.94 8.06-18 18-18z" fill="url(#red)"/>
-  <!-- front bubble (message), tail on the left -->
-  <path d="M36 44h36c9.94 0 18 8.06 18 18v16c0 9.94-8.06 18-18 18H52.5l-15.6 11.3c-2.2 1.6-5.2-.3-4.7-3L34 95.9C25 94.9 18 87.3 18 78V62c0-9.94 8.06-18 18-18z" fill="#fff"/>
-  <path d="M36 64h32M36 77h20" stroke="#0A8A5B" stroke-width="7" stroke-linecap="round"/>
+  <g clip-path="url(#sq)">
+    <rect x="6" y="6" width="116" height="116" fill="#22a06b"/>
+    <rect x="6" y="6" width="116" height="116" fill="#ffffff" opacity="0.10"/>
+    <!-- card-stock bottom edge -->
+    <rect x="6" y="104" width="116" height="18" fill="#0f7a4f"/>
+  </g>
+  <!-- white speech bubble with a tail bottom-left -->
+  <path d="M34 28h60a14 14 0 0 1 14 14v34a14 14 0 0 1-14 14H52l-15 13a3 3 0 0 1-5-2.3V90h-1A12 12 0 0 1 20 78V42a14 14 0 0 1 14-14z" fill="#fdfcf6"/>
+  <!-- translate swap: top arrow (green) points right, bottom arrow (coral) points left -->
+  <g fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M38 52h44m-11-9 11 9-11 9" stroke="#0f7a4f"/>
+    <path d="M90 70H46m11-9-11 9 11 9" stroke="#ec5340"/>
+  </g>
 </svg>
